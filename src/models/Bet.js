@@ -39,17 +39,14 @@ static async placeBet({ user_id, game_type, match_id, bet_choice, bet_value, amo
 
   const wallet = parseFloat(userData[0].wallet || 0);
 
-  // 2️⃣ Check sufficient balance
   if (wallet < amount) throw new Error("Insufficient balance");
 
-  // 3️⃣ Deduct amount from wallet
   const newWallet = wallet - amount;
   await db.query(
     "UPDATE users SET self_amount_limit = ? WHERE id = ?",
     [newWallet, user_id]
   );
 
-  // 4️⃣ Insert bet into `bets` table
   const now = new Date();
   const [insertBet] = await db.query(
     `INSERT INTO bets 

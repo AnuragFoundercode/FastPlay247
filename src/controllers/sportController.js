@@ -4,32 +4,13 @@ const axios = require("axios");
 const BASE_URL = "https://diamond-api-v2.scoreswift.xyz";
 const API_KEY = "ALdmzeQOo8ddhdhP4QWn_v34";
 
-// 🔹 Get all sports
-// exports.getAllSports = async (req, res) => {
-//   try {
-//     const sports = await sportModel.fetchAllSports();
-//     res.json(sports);
-//   } catch (error) {
-//     console.error("❌ Controller Error:", error.message);
-//     res.status(500).json({ success: false, msg: "Something went wrong" });
-//   }
-// };
-
-// controller/sportController.js
 exports.getAllSports = async (req, res) => {
   try {
     const sports = await sportModel.fetchAllSports();
-
-    //console.log("✅ Controller Received:", sports);
-
-    // API structure check karke Cricket filter karna
     let cricketData = [];
-
     if (Array.isArray(sports)) {
-      // case: response direct array ho
       cricketData = sports.filter(item => item.ename === "Cricket");
     } else if (Array.isArray(sports.data)) {
-      // case: response object ke andar "data" ho
       cricketData = sports.data.filter(item => item.ename === "Cricket");
     }
 
@@ -38,12 +19,10 @@ exports.getAllSports = async (req, res) => {
       data: cricketData,
     });
   } catch (error) {
-    // console.error("❌ Controller Error:", error.message);
     res.status(500).json({ success: false, msg: "Something went wrong" });
   }
 };
 
-// 🔹 Get match list by sid
 exports.getMatchList = async (req, res) => {
   try {
     const { sid } = req.query;
@@ -54,8 +33,7 @@ exports.getMatchList = async (req, res) => {
     const matches = await sportModel.fetchMatchList(sid);
     res.json(matches);
   } catch (error) {
-    // console.error("controller Error:", error);
-    res.status(500).json({ success: false, msg: "Something went wrong" });
+    res.status(500).json({ success: false, msg: error });
   }
 };
 
@@ -129,7 +107,7 @@ exports.getMatchListByGid = async (req, res) => {
       data.data = data.data.filter(item => item.mname === "Bookmaker");
     }
     
-    
+    // console.log("responsessssssssssssssssssssssssssssssssssssssss",response);
 
     return res.status(200).json({
       success: true,
@@ -144,8 +122,6 @@ exports.getMatchListByGid = async (req, res) => {
   }
 };
 
-
-// controllers/sportsController.js
 exports.getSportsStream = async (req, res) => {
   try {
     const { gmid } = req.query;
@@ -162,7 +138,6 @@ exports.getSportsStream = async (req, res) => {
   }
 };
 
-// 🔹 Get tree API
 exports.getTree = async (req, res) => {
   try {
     const data = await sportModel.fetchTree();
@@ -172,8 +147,6 @@ exports.getTree = async (req, res) => {
   }
 };
 
-
-// 🔹 Match Details (gmid + sid)
 exports.getMatchDetails = async (req, res) => {
   try {
     const { gmid, sid } = req.query;
@@ -187,8 +160,6 @@ exports.getMatchDetails = async (req, res) => {
   }
 };
 
-
-// 🔹 Private Data API
 exports.getPrivateData = async (req, res) => {
   try {
     const { gmid, sid } = req.query;
@@ -202,7 +173,6 @@ exports.getPrivateData = async (req, res) => {
   }
 };
 
-// 🔹 DirectStream Iframe Render
 exports.renderDirectStreamIframe = (req, res) => {
   const { gmid } = req.query;
 
@@ -252,15 +222,10 @@ exports.renderDirectStreamIframe = (req, res) => {
   res.send(html);
 };
 
-
-// 🔹 Place Bet API (aapke provided code ke according)
 exports.placeBet = async (req, res) => {
   try {
     const betData = req.body;
 
-     console.log("🎯 Received bet data:", betData);
-
-    // Validation - only required fields check karein
     if (!betData.event_id || !betData.market_id) {
       return res.status(400).json({ 
         success: false, 
@@ -278,7 +243,6 @@ exports.placeBet = async (req, res) => {
     });
 
   } catch (error) {
-    // console.error("❌ placeBet Controller Error:", error.message);
     res.status(500).json({
       success: false,
       msg: error.message || "Something went wrong while placing bet",
@@ -287,9 +251,6 @@ exports.placeBet = async (req, res) => {
   }
 };
 
-// --------------------------------------------------------------
-// 🟣 NEW CONTROLLER ADDED BELOW
-// 🔹 Get All Bets by User (for “My Bets” section)
 exports.getBetsByUser = async (req, res) => {
   try {
     const { user_id } = req.query;
@@ -299,15 +260,9 @@ exports.getBetsByUser = async (req, res) => {
     const bets = await sportModel.getBetsByUser(user_id);
     res.json({ success: true, data: bets });
   } catch (error) {
-    // console.error("❌ getBetsByUser Controller Error:", error.message);
     res.status(500).json({ success: false, msg: "Something went wrong" });
   }
 };
-
-
-
-
-
 
 exports.placeBett = async (req, res) => {
   try {
@@ -338,14 +293,12 @@ exports.placeBett = async (req, res) => {
     };
 
     const { data } = await axios.request(options);
-    // console.log("✅ Bet placed:", data);
 
     res.json({
       success: true,
       message: data.message || 'Bet placed successfully',
     });
   } catch (error) {
-    // console.error("❌ Error placing bet:", error.message);
     res.status(500).json({
       success: false,
       msg: 'Failed to place bet',
@@ -361,11 +314,9 @@ exports.getResult = async (req, res) => {
     const result = await sportModel.getResult(event_id, event_name, market_id, market_name);
     return res.json(result);
   } catch (error) {
-    // console.error("Controller Error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
-
 
 exports.getResultOfEvent = async (req, res) => {
   try {
@@ -378,7 +329,6 @@ exports.getResultOfEvent = async (req, res) => {
       });
     }
 
-    // ✅ API KEY URL me added
     const url = `https://diamond-api-v2.scoreswift.xyz/get_placed_bets?event_id=${event_id}&key=${API_KEY}`;
 
     const config = {
@@ -408,7 +358,6 @@ exports.getResultOfEvent = async (req, res) => {
   }
 };
 
-// ✅ Added: Get Live Score Iframe
 exports.getLiveScoreIframe = async (req, res) => {
   try {
     const { gmid } = req.query;
@@ -416,11 +365,8 @@ exports.getLiveScoreIframe = async (req, res) => {
     if (!gmid) {
       return res.status(400).json({ success: false, msg: "gmid is required" });
     }
-
-    // ✅ Full iframe URL
     const iframeUrl = `https://diamond-score.softgamingapi.com/diamond-live-score?gmid=${gmid}`;
 
-    // ✅ Option 1: Return HTML iframe directly
     const iframeHtml = `
       <iframe 
         src="${iframeUrl}" 
@@ -443,4 +389,6 @@ exports.getLiveScoreIframe = async (req, res) => {
     res.status(500).json({ success: false, msg: "Something went wrong" });
   }
 };
+
+
 

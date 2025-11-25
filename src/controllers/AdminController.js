@@ -62,13 +62,14 @@ exports.getDownUserList = async (req, res) => {
   }
 };
 
-
 exports.getFirstDownline = async (req, res) => {
   try {
     const { id } = req.body;
     if (!id) {
       return res.status(400).json({ success: false, message: "User ID is required" });
     }
+
+    // STEP 1: Get the username of the given user
     const [userData] = await db.query("SELECT username FROM users WHERE id = ?", [id]);
 
     if (userData.length === 0) {
@@ -76,25 +77,39 @@ exports.getFirstDownline = async (req, res) => {
     }
 
     const username = userData[0].username;
-    const [downlines] = await db.query("SELECT * FROM users WHERE master_user = ?", [username]);
+
+    // STEP 2: Fetch all direct downline users
+    const [downlines] = await db.query(
+      "SELECT * FROM users WHERE master_user = ?",
+      [username]
+    );
 
     if (downlines.length === 0) {
       return res.status(404).json({ success: false, message: "No downline found" });
     }
 
+    // STEP 3: Add agent_share key to each downline user
+    const formattedDownlines = downlines.map((user) => {
+      const selfShare = Number(user.self_share) || 0;
+      const agentShare = 100 - selfShare;
+      return {
+        ...user,
+        agent_share: agentShare,
+      };
+    });
+
     res.status(200).json({
       success: true,
       message: "First downline fetched successfully",
-      count: downlines.length,
-      data: downlines,
+      count: formattedDownlines.length,
+      data: formattedDownlines,
     });
+
   } catch (error) {
     console.error("Error fetching downline:", error);
     res.status(500).json({ success: false, message: "Internal Server Error", error: error.message });
   }
 };
-
-
 
 function generateUsername() {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -103,88 +118,6 @@ function generateUsername() {
   const randomNumbers = Math.floor(1000 + Math.random() * 9000);
   return randomLetters + randomNumbers;
 }
-
-// exports.createAdmin = async (req, res) => {
-//   try {
-//     const {
-//       name,
-//       password,
-//       master_user,
-//       self_amount_limit,
-//       self_share,
-//       Match_comission,
-//       session_comission,
-//       cassino_comission,
-//       role
-//     } = req.body;
-
-//     if (!name) return res.status(400).json({ success: false, message: "Name is required" });
-//     if (!password) return res.status(400).json({ success: false, message: "Password is required" });
-//     if (!master_user) return res.status(400).json({ success: false, message: "Master user is required" });
-//     if (self_amount_limit === undefined)
-//       return res.status(400).json({ success: false, message: "Self amount limit is required" });
-//     // if (self_share === undefined)
-//     //   return res.status(400).json({ success: false, message: "Self share is required" });
-//     if (Match_comission === undefined)
-//       return res.status(400).json({ success: false, message: "Match commission is required" });
-//     if (session_comission === undefined)
-//       return res.status(400).json({ success: false, message: "Session commission is required" });
-//     if (cassino_comission === undefined)
-//       return res.status(400).json({ success: false, message: "Cassino commission is required" });
-//     if (!role) return res.status(400).json({ success: false, message: "Role is required" });
-
-//     const masterLimit = await Admin.getMasterUserLimit(master_user);
-//     if (masterLimit === null)
-//       return res.status(400).json({ success: false, message: "Invalid master user" });
-
-//     const masterLimitNum = parseFloat(masterLimit);
-//     const newUserLimitNum = parseFloat(self_amount_limit);
-
-//     if (newUserLimitNum > masterLimitNum)
-//       return res.status(400).json({
-//         success: false,
-//         message: "Self amount limit cannot be greater than master user's available limit",
-//       });
-
-//     const username = generateUsername();
-    
-//     await db.query(
-//       "UPDATE users SET self_amount_limit = self_amount_limit - ?, updated_at = NOW() WHERE username = ?",
-//       [newUserLimitNum, master_user]
-//     );
-
-//     const insertId = await Admin.create({
-//       name,
-//       username,
-//       password,
-//       master_user,
-//       self_amount_limit,
-//       self_share,
-//       Match_comission,
-//       session_comission,
-//       cassino_comission,
-//       role
-//     });
-
-//     const remainingLimit = masterLimitNum - newUserLimitNum;
-//     console.log("remainingLimit",newUserLimitNum);
-    
-
-//     return res.status(200).json({
-//       success: true,
-//       message: "Admin created successfully",
-//       data: { id: insertId, username, remainingLimit },
-//     });
-
-//   } catch (error) {
-//     console.error("Error creating admin:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: error,
-//     });
-//   }
-// };
-
 
 exports.createAdmin = async (req, res) => {
   try {
@@ -573,7 +506,6 @@ exports.myLedgerReport = async (req, res) => {
       return res.status(400).json({ status: false, message: "userId and role are required" });
     }
 
-    // 1️⃣ Get all gmIds
     const [gmIds] = await db.execute(`SELECT DISTINCT gmId FROM sport_bets WHERE gmId IS NOT NULL`);
     if (!gmIds.length) {
       return res.json({ status: true, data: [] });
@@ -582,7 +514,6 @@ exports.myLedgerReport = async (req, res) => {
     const report = [];
 
     for (const gm of gmIds) {
-      // 2️⃣ Get all bets of that game with user details
       const [bets] = await db.execute(
         `SELECT sb.*, u.role as user_role, u.self_share, u.session_comission, u.master_user 
          FROM sport_bets sb 
@@ -600,7 +531,6 @@ exports.myLedgerReport = async (req, res) => {
         const isWon = bet.bet_status === "won";
         const marketType = bet.market_type;
 
-        // 3️⃣ Get complete upline hierarchy for this player
         const [upline] = await db.execute(
           `WITH RECURSIVE user_chain AS (
             SELECT id, username, master_user, role, self_share, session_comission, 0 as level
@@ -616,36 +546,29 @@ exports.myLedgerReport = async (req, res) => {
 
         if (!upline.length) continue;
 
-        const player = upline[0]; // The actual player who placed bet
-
-        // 4️⃣ SELF SHARE CALCULATION - Percentage Difference Method
+        const player = upline[0]; 
         for (let i = 0; i < upline.length - 1; i++) {
           const currentUser = upline[i];
           const parentUser = upline[i + 1];
 
-          // Calculate percentage difference
           const shareDifference = parentUser.self_share - currentUser.self_share;
           
           if (shareDifference > 0) {
             const shareAmount = (betAmount * shareDifference) / 100;
 
-            // Check if this is the target user
             if (parentUser.id == userId) {
               if (!isWon) {
-                // Player lost - parent gets credit
                 totalCredit += shareAmount;
               } else {
-                // Player won - parent gets debit  
                 totalDebit += shareAmount;
               }
             }
           }
         }
 
-        // 5️⃣ Handle Company separately (top level gets remaining percentage)
         const companyUser = upline.find(user => user.role === 1);
         if (companyUser && companyUser.id == userId) {
-          const topDownline = upline[upline.length - 2]; // Highest downline (MasterAdmin)
+          const topDownline = upline[upline.length - 2]; 
           const companyShare = (100 - topDownline.self_share);
           
           if (companyShare > 0) {
@@ -658,9 +581,7 @@ exports.myLedgerReport = async (req, res) => {
           }
         }
 
-        // 6️⃣ SESSION COMMISSION (Only for fancy bets) - TOP to BOTTOM FLOW
         if (marketType === "fancy") {
-          // Get the complete hierarchy from company to player
           const [completeHierarchy] = await db.execute(
             `WITH RECURSIVE complete_chain AS (
               SELECT id, username, master_user, role, self_share, session_comission, 0 as level
@@ -675,34 +596,26 @@ exports.myLedgerReport = async (req, res) => {
           );
 
           if (completeHierarchy.length > 0) {
-            // Session commission flows from TOP to BOTTOM
             for (let i = 0; i < completeHierarchy.length - 1; i++) {
               const currentLevel = completeHierarchy[i];
               const nextLevel = completeHierarchy[i + 1];
 
-              // Session commission amount for this level
               const sessionAmount = (betAmount * nextLevel.session_comission) / 100;
 
-              // Check if current level is the target user
               if (currentLevel.id == userId) {
-                // Current level gets DEBIT (pays to next level)
                 totalDebit += sessionAmount;
               }
 
-              // Check if next level is the target user  
               if (nextLevel.id == userId) {
-                // Next level gets CREDIT (receives from current level)
-                if (!isWon) { // Only credit if player lost
+                if (!isWon) { 
                   totalCredit += sessionAmount;
                 }
               }
             }
 
-            // Special case: If target user is the last level (player)
             const lastUser = completeHierarchy[completeHierarchy.length - 1];
             if (lastUser.id == userId && lastUser.role === 7) {
-              // Player doesn't get session commission
-              // No action needed
+              
             }
           }
         }
@@ -779,7 +692,6 @@ exports.getSportBetHistory = async (req, res) => {
   }
 };
 
-
 exports.getCasinoBetHistory = async (req, res) => {
   try {
     const { userId, game_type } = req.body;
@@ -831,6 +743,63 @@ exports.getCasinoBetHistory = async (req, res) => {
   }
 };
 
+exports.getAllBetHistory = async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    // ✅ Validate userId
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "userId is required",
+      });
+    }
+
+    const parsedUserId = parseInt(userId);
+    if (isNaN(parsedUserId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid userId format",
+      });
+    }
+
+    // ===============================
+    // 📌 SPORT BETS (pending)
+    // ===============================
+    const [sportRows] = await db.execute(
+      "SELECT * FROM sport_bets WHERE bet_status='pending' AND user_id = ?",
+      [parsedUserId]
+    );
+
+    // ===============================
+    // 📌 CASINO BETS (pending)
+    // ===============================
+    const [casinoRows] = await db.execute(
+      "SELECT game_type, match_id, bet_choice, amount, status, bet_value, type, created_at FROM bets WHERE status='pending' AND user_id = ?",
+      [parsedUserId]
+    );
+
+    // ===============================
+    // 📌 RESPONSE
+    // ===============================
+    return res.status(200).json({
+      success: true,
+      sport_total: sportRows.length,
+      casino_total: casinoRows.length,
+      total: sportRows.length + casinoRows.length,
+      sport_bets: sportRows,
+      casino_bets: casinoRows,
+    });
+
+  } catch (error) {
+    console.error("Error in getAllBetHistory:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
 
 exports.updateAdmin = async (req, res) => {
   try {
@@ -851,8 +820,8 @@ exports.updateAdmin = async (req, res) => {
     if (!master_user) return res.status(400).json({ success: false, message: "Master user is required" });
     if (self_amount_limit === undefined)
       return res.status(400).json({ success: false, message: "Self amount limit is required" });
-    if (self_share === undefined)
-      return res.status(400).json({ success: false, message: "Self share is required" });
+    //if (self_share === undefined)
+    //  return res.status(400).json({ success: false, message: "Self share is required" });
     if (Match_comission === undefined)
       return res.status(400).json({ success: false, message: "Match commission is required" });
     if (session_comission === undefined)
@@ -1198,126 +1167,6 @@ exports.myStatement = async (req, res) => {
   }
 };
 
-// only sports working perfect
-
-// exports.clientLedger = async (req, res) => {
-//   try {
-//     const { user_id } = req.body;
-
-//     if (!user_id) {
-//       return res.status(400).json({ status: false, message: "user_id is required" });
-//     }
-
-//     // 1️⃣ Check if user exists and is a client
-//     const [userRows] = await db.query(
-//       `SELECT id, role, Match_comission, session_comission 
-//       FROM users WHERE id = ?`,
-//       [user_id]
-//     );
-
-//     if (!userRows.length) {
-//       return res.status(404).json({ status: false, message: "User not found" });
-//     }
-
-//     const user = userRows[0];
-//     if (user.role != 7) {
-//       return res.status(403).json({ status: false, message: "Only clients can access this ledger" });
-//     }
-
-//     // 2️⃣ Get all bets grouped by gmId for this client
-//     const [bets] = await db.query(
-//       `SELECT gmId, event_name, market_type, bet_amount, win_amount, created_at
-//       FROM sport_bets 
-//       WHERE user_id = ? AND gmId IS NOT NULL
-//       ORDER BY created_at DESC`,
-//       [user_id]
-//     );
-
-//     if (!bets.length) {
-//       return res.json({ status: true, data: [], total: {} });
-//     }
-
-//     // 3️⃣ Group by gmId
-//     const grouped = {};
-//     for (const bet of bets) {
-//       const gmId = bet.gmId;
-//       if (!grouped[gmId]) {
-//         grouped[gmId] = {
-//           gmId,
-//           event_name: bet.event_name,
-//           totalDebit: 0,
-//           totalCredit: 0,
-//           totalCommission: 0,
-//           dateTime: bet.created_at
-//         };
-//       }
-
-//       // Debit (bet placed)
-//       grouped[gmId].totalDebit += parseFloat(bet.bet_amount || 0);
-
-//       // Credit (win amount)
-//       grouped[gmId].totalCredit += parseFloat(bet.win_amount || 0);
-
-//       // Commission (based on market type)
-//       if (bet.market_type === "match") {
-//         grouped[gmId].totalCommission += (bet.bet_amount * user.Match_comission) / 100;
-//       } else if (bet.market_type === "fancy") {
-//         grouped[gmId].totalCommission += (bet.bet_amount * user.session_comission) / 100;
-//       }
-//     }
-
-//     // 4️⃣ Prepare final report and total calculations
-//     let totalDebit = 0;
-//     let totalCredit = 0;
-//     let totalCommission = 0;
-//     let totalBalance = 0;
-
-//     const report = Object.values(grouped).map((item) => {
-//       const totalCreditValue = item.totalCredit + item.totalCommission;
-//       const balance = totalCreditValue - item.totalDebit;
-
-//       totalDebit += item.totalDebit;
-//       totalCredit += totalCreditValue;
-//       totalCommission += item.totalCommission;
-//       totalBalance += balance;
-
-//       return {
-//         gmId: item.gmId,
-//         eventName: item.event_name,
-//         debit: item.totalDebit.toFixed(2),
-//         credit: totalCreditValue.toFixed(2),
-//         commission: item.totalCommission.toFixed(2),
-//         balance: balance.toFixed(2),
-//         dateTime: item.dateTime,
-//       };
-//     });
-
-//     // 5️⃣ Add totals object
-//     const totals = {
-//       total_debit: totalDebit.toFixed(2),
-//       total_credit: totalCredit.toFixed(2),
-//       total_commission: totalCommission.toFixed(2),
-//       total_balance: totalBalance.toFixed(2),
-//     };
-
-//     return res.json({
-//       status: true,
-//       message: "Client ledger fetched successfully",
-//       data: report,
-//       total: totals,
-//     });
-
-//   } catch (err) {
-//     console.error("Ledger Error:", err);
-//     return res.status(500).json({
-//       status: false,
-//       message: "Internal server error",
-//       error: err.message,
-//     });
-//   }
-// };
-
-
 exports.clientLedger = async (req, res) => {
   try {
     const { user_id } = req.body;
@@ -1326,7 +1175,6 @@ exports.clientLedger = async (req, res) => {
       return res.status(400).json({ status: false, message: "user_id is required" });
     }
 
-    // 1️⃣ Check if user exists and is a client
     const [userRows] = await db.query(
       `SELECT id, role, Match_comission, session_comission, cassino_comission 
       FROM users WHERE id = ?`,
@@ -1342,7 +1190,6 @@ exports.clientLedger = async (req, res) => {
       return res.status(403).json({ status: false, message: "Only clients can access this ledger" });
     }
 
-    // 2️⃣ SPORTS BETS (full history, gmId-based)
     const [bets] = await db.query(
       `SELECT gmId, event_name, market_type, bet_amount, win_amount, created_at
       FROM sport_bets 
@@ -1368,14 +1215,13 @@ exports.clientLedger = async (req, res) => {
       grouped[gmId].totalDebit += parseFloat(bet.bet_amount || 0);
       grouped[gmId].totalCredit += parseFloat(bet.win_amount || 0);
 
-      if (bet.market_type === "match") {
+      if (bet.market_type === "match1") {
         grouped[gmId].totalCommission += (bet.bet_amount * user.Match_comission) / 100;
       } else if (bet.market_type === "fancy") {
         grouped[gmId].totalCommission += (bet.bet_amount * user.session_comission) / 100;
       }
     }
 
-    // 3️⃣ CASINO LEDGER (24 hours + grouped by game_type + date)
     const [cassinoBets] = await db.query(
       `SELECT 
           game_type, 
@@ -1425,7 +1271,6 @@ exports.clientLedger = async (req, res) => {
       });
     }
 
-    // 4️⃣ SPORTS LEDGER CALCULATIONS
     let totalDebit = 0;
     let totalCredit = 0;
     let totalCommission = 0;
@@ -1451,10 +1296,8 @@ exports.clientLedger = async (req, res) => {
       };
     });
 
-    // 5️⃣ MERGE BOTH REPORTS
     const finalReport = [...sportsReport, ...cassinoReport];
 
-    // 6️⃣ TOTALS (combined)
     const totals = {
       total_debit: (totalDebit + cassinoTotalDebit).toFixed(2),
       total_credit: (totalCredit + cassinoTotalCredit).toFixed(2),
@@ -1462,7 +1305,6 @@ exports.clientLedger = async (req, res) => {
       total_balance: (totalBalance + cassinoTotalBalance).toFixed(2),
     };
 
-    // 7️⃣ Final response
     return res.json({
       status: true,
       message: "Client ledger fetched successfully",
@@ -1480,9 +1322,6 @@ exports.clientLedger = async (req, res) => {
   }
 };
 
-
-
-
 exports.clientCommissionReport = async (req, res) => {
   try {
     const { user_id } = req.body;
@@ -1491,7 +1330,6 @@ exports.clientCommissionReport = async (req, res) => {
       return res.status(400).json({ status: false, message: "user_id is required" });
     }
 
-    // 1️⃣ Fetch user
     const [userRows] = await db.query(
       `SELECT id, role, Match_comission, session_comission, cassino_comission
        FROM users WHERE id = ?`,
@@ -1507,7 +1345,6 @@ exports.clientCommissionReport = async (req, res) => {
       return res.status(403).json({ status: false, message: "Only clients can access commission report" });
     }
 
-    // 2️⃣ Fetch sports bets
     const [bets] = await db.query(
       `SELECT gmId, event_name, market_type, bet_amount, created_at
        FROM sport_bets 
@@ -1516,7 +1353,6 @@ exports.clientCommissionReport = async (req, res) => {
       [user_id]
     );
 
-    // Group by gmId
     const grouped = {};
     for (const bet of bets) {
       const gmId = bet.gmId;
@@ -1532,14 +1368,13 @@ exports.clientCommissionReport = async (req, res) => {
         };
       }
 
-      if (bet.market_type === "match") {
+      if (bet.market_type === "match1") {
         grouped[gmId].totalMatchComission += (bet.bet_amount * user.Match_comission) / 100;
       } else if (bet.market_type === "fancy") {
         grouped[gmId].totalSessionComission += (bet.bet_amount * user.session_comission) / 100;
       }
     }
 
-    // 3️⃣ Fetch cassino bets - DAY WISE + game_type WISE
     const [cassinoBets] = await db.query(
       `SELECT 
           game_type, 
@@ -1553,7 +1388,6 @@ exports.clientCommissionReport = async (req, res) => {
       [user_id]
     );
 
-    // Process cassino commission
     const cassinoData = [];
     let totalCassinoCom = 0;
 
@@ -1561,7 +1395,6 @@ exports.clientCommissionReport = async (req, res) => {
       const totalBet = parseFloat(bet.total_bet || 0);
       const totalWin = parseFloat(bet.total_win || 0);
 
-      // User lost => commission applicable
       if (totalBet > totalWin) {
         const com = ((totalBet - totalWin) * user.cassino_comission) / 100;
         totalCassinoCom += com;
@@ -1578,7 +1411,6 @@ exports.clientCommissionReport = async (req, res) => {
       }
     }
 
-    // 4️⃣ Prepare sports report
     let totalMatchCom = 0;
     let totalSessionCom = 0;
     let totalAllCom = totalCassinoCom;
@@ -1601,10 +1433,8 @@ exports.clientCommissionReport = async (req, res) => {
       };
     });
 
-    // Merge reports
     const finalReport = [...sportsReport, ...cassinoData];
 
-    // 5️⃣ Totals
     const totals = {
       total_match_comission: totalMatchCom.toFixed(2),
       total_session_comission: totalSessionCom.toFixed(2),
@@ -1625,6 +1455,932 @@ exports.clientCommissionReport = async (req, res) => {
       status: false,
       message: "Internal server error",
       error: err.message,
+    });
+  }
+};
+
+exports.getUserSummary = async (req, res) => {
+  try {
+    const { user_id } = req.body;
+
+    if (!user_id) {
+      return res.status(400).json({
+        success: false,
+        message: "user_id is required"
+      });
+    }
+
+    const [userData] = await db.query(
+      "SELECT id, username, name, role, self_amount_limit, Match_comission, cassino_comission, session_comission FROM users WHERE id = ?",
+      [user_id]
+    );
+
+    if (userData.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    const user = userData[0];
+    const hierarchy = {
+      1: [2,3,4,5,6,7], 
+      2: [3,4,5,6,7],  
+      3: [4,5,6,7],    
+      4: [5,6,7],
+      5: [6,7],
+      6: [7],
+      7: []
+    };
+
+    const allowedRoles = hierarchy[user.role];
+
+    let downlineCounts = {};
+
+    if (allowedRoles.length > 0) {
+      const allChildren = await getRecursiveUsers(user.username);
+      allowedRoles.forEach(r => {
+        downlineCounts[`role_${r}`] = allChildren.filter(u => u.role === r).length;
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "User summary fetched successfully",
+      data: {
+        user_id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+
+        my_self_amount_limit: user.self_amount_limit,
+
+        commissions: {
+          match: user.Match_comission,
+          cassino: user.cassino_comission,
+          session: user.session_comission
+        },
+
+        downline_summary: downlineCounts
+      }
+    });
+
+  } catch (error) {
+    console.log("Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error
+    });
+  }
+};
+
+async function getRecursiveUsers(parentUsername) {
+  let results = [];
+
+  const [directUsers] = await db.query(
+    "SELECT id, username, role FROM users WHERE master_user = ?",
+    [parentUsername]
+  );
+
+  for (const u of directUsers) {
+    results.push(u);
+    const childUsers = await getRecursiveUsers(u.username);
+    results = results.concat(childUsers);
+  }
+
+  return results;
+}
+
+exports.welcomMsg = async (req, res) => {
+  try {
+    const [data] = await db.query("SELECT * FROM `tbl_setting`");
+
+    if (!data || data.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No settings found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Setting data fetched successfully",
+      data: data[0] 
+    });
+
+  } catch (error) {
+    console.error("Error in welcomMsg:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+
+exports.masterProfitLoss = async (req, res) => {
+  try {
+    const { user_id } = req.body;
+
+    if (!user_id) {
+      return res.status(400).json({ status: false, message: "user_id is required" });
+    }
+
+    // STEP 1: Get master info (we also need username)
+    const [userRows] = await db.query(
+      `SELECT id, username, role, Match_comission, session_comission, cassino_comission 
+       FROM users WHERE id = ?`,
+      [user_id]
+    );
+
+    if (!userRows.length) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    const master = userRows[0];
+
+    // Clients cannot access downline
+    if (master.role >= 7) {
+      return res.status(403).json({ status: false, message: "Clients cannot access downline ledger" });
+    }
+
+    const masterUsername = master.username;  // ❤️ IMPORTANT
+
+    // STEP 2: DOWNLINE CLIENTS USING USERNAME (NOT ID)
+    const getDownlineClients = async (username) => {
+      const [rows] = await db.query(
+        `SELECT id, username, role 
+         FROM users 
+         WHERE master_user = ?`,
+        [username]
+      );
+
+      let clients = [];
+
+      for (const row of rows) {
+        if (row.role == 7) {
+          // Found a client
+          clients.push(row.id);
+        } else {
+          // Go deeper recursively using USERNAME
+          const childClients = await getDownlineClients(row.username);
+          clients = [...clients, ...childClients];
+        }
+      }
+
+      return clients;
+    };
+
+    // 🌟 GET ALL CLIENT IDs
+    const clientIds = await getDownlineClients(masterUsername);
+
+    if (clientIds.length === 0) {
+      return res.json({
+        status: true,
+        message: "No clients found under this user",
+        data: [],
+        total: {
+          total_debit: "0.00",
+          total_credit: "0.00",
+          total_commission: "0.00",
+          total_balance: "0.00",
+        }
+      });
+    }
+
+    // ACCUMULATORS (ensure they are numbers)
+    let finalReport = [];
+    let totalDebit = 0;
+    let totalCredit = 0;
+    let totalCommission = 0;
+    let totalBalance = 0;
+
+    // STEP 3: PROCESS EACH CLIENT
+    for (const cId of clientIds) {
+
+      // Client commissions
+      const [cdata] = await db.query(
+        `SELECT Match_comission, session_comission, cassino_comission 
+         FROM users WHERE id = ?`,
+        [cId]
+      );
+
+      const client = cdata[0] || { Match_comission: 0, session_comission: 0, cassino_comission: 0 };
+
+      // Make sure commissions are numbers
+      const matchCommissionRate = parseFloat(client.Match_comission) || 0;
+      const sessionCommissionRate = parseFloat(client.session_comission) || 0;
+      const cassinoCommissionRate = parseFloat(client.cassino_comission) || 0;
+
+      // --------------------- SPORTS LEDGER ---------------------
+      const [bets] = await db.query(
+        `SELECT gmId, event_name, market_type, bet_amount, win_amount, created_at
+         FROM sport_bets 
+         WHERE user_id = ? AND gmId IS NOT NULL
+         ORDER BY created_at DESC`,
+        [cId]
+      );
+
+      const grouped = {};
+
+      for (const bet of bets) {
+        const gmId = bet.gmId || "unknown";
+        // sanitize numeric fields
+        const betAmount = parseFloat(bet.bet_amount) || 0;
+        const winAmount = parseFloat(bet.win_amount) || 0;
+        const marketType = bet.market_type || "";
+
+        if (!grouped[gmId]) {
+          grouped[gmId] = {
+            gmId: gmId,
+            event_name: bet.event_name || "",
+            totalDebit: 0,
+            totalCredit: 0,
+            totalCommission: 0,
+            dateTime: bet.created_at || null
+          };
+        }
+
+        grouped[gmId].totalDebit += betAmount;
+        grouped[gmId].totalCredit += winAmount;
+
+        // Commission
+        if (marketType === "match1") {
+          grouped[gmId].totalCommission += (betAmount * matchCommissionRate) / 100;
+        } else if (marketType === "fancy") {
+          grouped[gmId].totalCommission += (betAmount * sessionCommissionRate) / 100;
+        }
+      }
+
+      const sportsData = Object.values(grouped).map((item) => {
+        // ensure numbers
+        const td = Number(item.totalDebit) || 0;
+        const tc = Number(item.totalCredit) || 0;
+        const tcomm = Number(item.totalCommission) || 0;
+        const creditVal = tc + tcomm;
+        const balance = creditVal - td;
+
+        totalDebit += td;
+        totalCredit += creditVal;
+        totalCommission += tcomm;
+        totalBalance += balance;
+
+        return {
+          gmId: item.gmId,
+          eventName: item.event_name,
+          debit: td.toFixed(2),
+          credit: creditVal.toFixed(2),
+          commission: tcomm.toFixed(2),
+          balance: balance.toFixed(2),
+          dateTime: item.dateTime,
+        };
+      });
+
+      finalReport.push(...sportsData);
+
+
+      // --------------------- CASSINO LEDGER ---------------------
+      const [cassinoBets] = await db.query(
+        `SELECT 
+            game_type, 
+            DATE(created_at) AS bet_date,
+            SUM(amount) AS total_bet, 
+            SUM(win_amount) AS total_win
+         FROM bets
+         WHERE user_id = ?
+         GROUP BY game_type, DATE(created_at)
+         ORDER BY bet_date DESC`,
+        [cId]
+      );
+
+      for (const bet of cassinoBets) {
+        const totalBet = parseFloat(bet.total_bet) || 0;
+        const totalWin = parseFloat(bet.total_win) || 0;
+
+        let commission = 0;
+        if (totalBet > totalWin) {
+          commission = ((totalBet - totalWin) * cassinoCommissionRate) / 100;
+        }
+
+        const creditVal = totalWin + commission;
+        const balance = creditVal - totalBet;
+
+        totalDebit += totalBet;
+        totalCredit += creditVal;
+        totalCommission += commission;
+        totalBalance += balance;
+
+        finalReport.push({
+          gmId: `Cassino-${bet.game_type}-${bet.bet_date}`,
+          eventName: bet.game_type,
+          debit: totalBet.toFixed(2),
+          credit: creditVal.toFixed(2),
+          commission: commission.toFixed(2),
+          balance: balance.toFixed(2),
+          dateTime: bet.bet_date,
+        });
+      }
+    }
+
+    // FINAL RESPONSE - make sure totals are numbers before toFixed
+    return res.json({
+      status: true,
+      message: "Master ledger fetched successfully",
+      data: finalReport,
+      total: {
+        total_debit: Number(totalDebit || 0).toFixed(2),
+        total_credit: Number(totalCredit || 0).toFixed(2),
+        total_commission: Number(totalCommission || 0).toFixed(2),
+        total_balance: Number(totalBalance || 0).toFixed(2),
+      },
+    });
+
+  } catch (err) {
+    console.error("Master Ledger Error:", err);
+    return res.status(500).json({
+      status: false,
+      message: "Internal server error",
+      error: err.message,
+    });
+  }
+};
+
+
+// exports.allMasterReport = async (req, res) => {
+//   try {
+//     const { user_id } = req.body;
+
+//     if (!user_id) {
+//       return res.status(400).json({ status: false, message: "user_id is required" });
+//     }
+
+//     // MASTER INFO
+//     const [userRows] = await db.query(
+//       `SELECT id, role, username FROM users WHERE id = ?`,
+//       [user_id]
+//     );
+
+//     if (!userRows.length) {
+//       return res.status(404).json({ status: false, message: "User not found" });
+//     }
+
+//     const master = userRows[0];
+
+//     // ONLY ROLE 1–5 CAN SEE DOWNLINE
+//     if (master.role >= 6) {
+//       return res.status(403).json({ status: false, message: "Not allowed" });
+//     }
+
+//     // HELPER: FETCH DIRECT DOWNLINE USERS (BY USERNAME)
+//     const getDownlineUsers = async (username) => {
+//       const [rows] = await db.query(
+//         `SELECT id, username, role FROM users WHERE master_user = ?`,
+//         [username]
+//       );
+//       return rows;
+//     };
+
+//     // STEP 1: FETCH ALL AGENTS (ROLE 6) UNDER MASTER
+//     const fetchAgents = async (username) => {
+//       let result = [];
+
+//       const users = await getDownlineUsers(username);
+
+//       for (const u of users) {
+//         if (u.role == 6) {
+//           result.push(u);
+//         } else {
+//           const deeper = await fetchAgents(u.username);
+//           result = [...result, ...deeper];
+//         }
+//       }
+
+//       return result;
+//     };
+
+//     const agents = await fetchAgents(master.username);
+
+//     if (!agents.length) {
+//       return res.json({
+//         status: true,
+//         message: "No agents found",
+//         data: [],
+//         total: {}
+//       });
+//     }
+
+//     // MAIN FINAL OUTPUT
+//     let finalReport = [];
+
+//     // GRAND TOTALS
+//     let G_match = 0,
+//       G_session = 0,
+//       G_total = 0,
+//       G_MComm = 0,
+//       G_SComm = 0,
+//       G_TComm = 0,
+//       G_GTotal = 0,
+//       G_AShare = 0,
+//       G_Balance = 0;
+
+//     // STEP 2: PROCESS EACH AGENT
+//     for (const agent of agents) {
+//       const agentUsername = agent.username;
+
+//       // FIND ALL CLIENTS UNDER THIS AGENT
+//       const [clients] = await db.query(
+//         `SELECT id, Match_comission, session_comission, cassino_comission, self_share
+//          FROM users 
+//          WHERE master_user = ? AND role = 7`,
+//         [agentUsername]
+//       );
+
+//       // AGENT SUMMARY ACCUMULATORS
+//       let M = 0,
+//         S = 0,
+//         Total = 0,
+//         MComm = 0,
+//         SComm = 0,
+//         TComm = 0,
+//         GTotal = 0,
+//         AShare = 0,
+//         Balance = 0;
+
+//       // STEP 3: PROCESS CLIENTS OF THIS AGENT
+//       for (const client of clients) {
+//         const cId = client.id;
+
+//         // SPORT BETS
+//         const [bets] = await db.query(
+//           `SELECT market_type, bet_amount, win_amount
+//           FROM sport_bets WHERE user_id = ?`,
+//           [cId]
+//         );
+
+//         for (const bet of bets) {
+//           const betAmt = parseFloat(bet.bet_amount || 0);
+//           const winAmt = parseFloat(bet.win_amount || 0);
+
+//           if (bet.market_type === "match1") {
+//             const value = winAmt - betAmt;
+//             M += value;
+
+//             const comm = (Math.abs(betAmt) * client.Match_comission) / 100;
+//             MComm += comm;
+//             TComm += comm;
+//           }
+
+//           if (bet.market_type === "fancy") {
+//             const value = winAmt - betAmt;
+//             S += value;
+
+//             const comm = (Math.abs(betAmt) * client.session_comission) / 100;
+//             SComm += comm;
+//             TComm += comm;
+//           }
+//         }
+
+//         // CASSINO BETS
+//         const [cBets] = await db.query(
+//           `SELECT amount, win_amount FROM bets WHERE user_id = ?`,
+//           [cId]
+//         );
+
+//         for (const b of cBets) {
+//           const betAmt = parseFloat(b.amount || 0);
+//           const winAmt = parseFloat(b.win_amount || 0);
+
+//           const value = winAmt - betAmt;
+//           Total += value;
+
+//           if (betAmt > winAmt) {
+//             const comm = ((betAmt - winAmt) * client.cassino_comission) / 100;
+//             TComm += comm;
+//           }
+//         }
+//       }
+
+//       // AGENT TOTAL CALCULATION
+//       Total = M + S + Total;
+
+//       GTotal = Total + TComm;
+
+//       AShare = (GTotal * agent.self_share) / 100;
+//       Balance = GTotal - AShare;
+
+//       // PUSH RESULT FOR THIS AGENT
+//       finalReport.push({
+//         agent: agentUsername,
+//         match: M.toFixed(2),
+//         session: S.toFixed(2),
+//         total: Total.toFixed(2),
+//         MComm: MComm.toFixed(2),
+//         SComm: SComm.toFixed(2),
+//         TComm: TComm.toFixed(2),
+//         GTotal: GTotal.toFixed(2),
+//         AShare: AShare.toFixed(2),
+//         balance: Balance.toFixed(2),
+//         details: agent.id
+//       });
+
+//       // ADD TO GRAND TOTAL
+//       G_match += M;
+//       G_session += S;
+//       G_total += Total;
+//       G_MComm += MComm;
+//       G_SComm += SComm;
+//       G_TComm += TComm;
+//       G_GTotal += GTotal;
+//       G_AShare += AShare;
+//       G_Balance += Balance;
+//     }
+
+//     // SEND FINAL RESPONSE
+//     return res.json({
+//       status: true,
+//       message: "Agent wise profit/loss",
+//       data: finalReport,
+//       total: {
+//         match: G_match.toFixed(2),
+//         session: G_session.toFixed(2),
+//         total: G_total.toFixed(2),
+//         MComm: G_MComm.toFixed(2),
+//         SComm: G_SComm.toFixed(2),
+//         TComm: G_TComm.toFixed(2),
+//         GTotal: G_GTotal.toFixed(2),
+//         AShare: G_AShare.toFixed(2),
+//         balance: G_Balance.toFixed(2)
+//       }
+//     });
+
+//   } catch (err) {
+//     console.error("MASTER LEDGER ERROR:", err);
+//     return res.status(500).json({ status: false, error: err });
+//   }
+// };
+
+
+exports.allMasterReport = async (req, res) => {
+  try {
+    const { user_id, from_date, to_date, agent_id } = req.body;
+
+    if (!user_id) {
+      return res.status(400).json({ status: false, message: "user_id is required" });
+    }
+
+    // MASTER INFO
+    const [userRows] = await db.query(
+      `SELECT id, role, username FROM users WHERE id = ?`,
+      [user_id]
+    );
+
+    if (!userRows.length) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    const master = userRows[0];
+
+    // ONLY ROLE 1–5 CAN SEE DOWNLINE
+    if (master.role >= 6) {
+      return res.status(403).json({ status: false, message: "Not allowed" });
+    }
+
+    // DATE FILTER QUERY
+    let dateFilter = "";
+    let dateParams = [];
+
+    if (from_date && to_date) {
+      dateFilter = " AND created_at BETWEEN ? AND ? ";
+      dateParams.push(from_date, to_date);
+    } else if (from_date) {
+      dateFilter = " AND created_at >= ? ";
+      dateParams.push(from_date);
+    } else if (to_date) {
+      dateFilter = " AND created_at <= ? ";
+      dateParams.push(to_date);
+    }
+
+    // HELPER: FETCH DIRECT DOWNLINE USERS (BY USERNAME)
+    const getDownlineUsers = async (username) => {
+      const [rows] = await db.query(
+        `SELECT id, username, role, self_share 
+         FROM users WHERE master_user = ?`,
+        [username]
+      );
+      return rows;
+    };
+
+    // FETCH ALL AGENTS (ROLE 6)
+    const fetchAgents = async (username) => {
+      let result = [];
+
+      const users = await getDownlineUsers(username);
+
+      for (const u of users) {
+        if (u.role == 6) {
+          result.push(u);
+        } else {
+          const deeper = await fetchAgents(u.username);
+          result = [...result, ...deeper];
+        }
+      }
+
+      return result;
+    };
+
+    let agents = await fetchAgents(master.username);
+
+    // 🔥 FILTER ONLY ONE AGENT IF agent_id PROVIDED
+    if (agent_id) {
+      agents = agents.filter((a) => a.id == agent_id);
+    }
+
+    if (!agents.length) {
+      return res.json({
+        status: true,
+        message: "No agents found",
+        data: [],
+        total: {}
+      });
+    }
+
+    // MAIN OUTPUT
+    let finalReport = [];
+
+    // GRAND TOTALS
+    let G_match = 0,
+      G_session = 0,
+      G_total = 0,
+      G_MComm = 0,
+      G_SComm = 0,
+      G_TComm = 0,
+      G_GTotal = 0,
+      G_AShare = 0,
+      G_Balance = 0;
+
+    // PROCESS EACH AGENT
+    for (const agent of agents) {
+      const agentUsername = agent.username;
+
+      // FIND CLIENTS OF AGENT
+      const [clients] = await db.query(
+        `SELECT id, Match_comission, session_comission, cassino_comission, self_share 
+         FROM users 
+         WHERE master_user = ? AND role = 7`,
+        [agentUsername]
+      );
+
+      // AGENT SUMMARY
+      let M = 0,
+        S = 0,
+        Total = 0,
+        MComm = 0,
+        SComm = 0,
+        TComm = 0,
+        GTotal = 0,
+        AShare = 0,
+        Balance = 0;
+
+      // PROCESS CLIENTS
+      for (const client of clients) {
+        const cId = client.id;
+
+        // SPORTS BETS WITH DATE FILTER
+        const [bets] = await db.query(
+          `SELECT market_type, bet_amount, win_amount
+           FROM sport_bets 
+           WHERE user_id = ? ${dateFilter}`,
+          [cId, ...dateParams]
+        );
+
+        for (const bet of bets) {
+          const betAmt = parseFloat(bet.bet_amount || 0);
+          const winAmt = parseFloat(bet.win_amount || 0);
+
+          if (bet.market_type === "match1") {
+            const value = winAmt - betAmt;
+            M += value;
+
+            const comm = (Math.abs(betAmt) * client.Match_comission) / 100;
+            MComm += comm;
+            TComm += comm;
+          }
+
+          if (bet.market_type === "fancy") {
+            const value = winAmt - betAmt;
+            S += value;
+
+            const comm = (Math.abs(betAmt) * client.session_comission) / 100;
+            SComm += comm;
+            TComm += comm;
+          }
+        }
+
+        // CASSINO BETS WITH DATE FILTER
+        const [cBets] = await db.query(
+          `SELECT amount, win_amount 
+           FROM bets 
+           WHERE user_id = ? ${dateFilter}`,
+          [cId, ...dateParams]
+        );
+
+        for (const b of cBets) {
+          const betAmt = parseFloat(b.amount || 0);
+          const winAmt = parseFloat(b.win_amount || 0);
+
+          const value = winAmt - betAmt;
+          Total += value;
+
+          if (betAmt > winAmt) {
+            const comm = ((betAmt - winAmt) * client.cassino_comission) / 100;
+            TComm += comm;
+          }
+        }
+      }
+
+      // FINAL AGENT CALC
+      Total = M + S + Total;
+
+      GTotal = Total + TComm;
+
+      AShare = (GTotal * agent.self_share) / 100;
+
+      Balance = GTotal - AShare;
+
+      // AGENT RESULT
+      finalReport.push({
+        agent: agentUsername,
+        match: M.toFixed(2),
+        session: S.toFixed(2),
+        total: Total.toFixed(2),
+        MComm: MComm.toFixed(2),
+        SComm: SComm.toFixed(2),
+        TComm: TComm.toFixed(2),
+        GTotal: GTotal.toFixed(2),
+        AShare: AShare.toFixed(2),
+        balance: Balance.toFixed(2),
+        details: agent.id
+      });
+
+      // GRAND TOTALS
+      G_match += M;
+      G_session += S;
+      G_total += Total;
+      G_MComm += MComm;
+      G_SComm += SComm;
+      G_TComm += TComm;
+      G_GTotal += GTotal;
+      G_AShare += AShare;
+      G_Balance += Balance;
+    }
+
+    // SEND RESPONSE
+    return res.json({
+      status: true,
+      message: "Agent wise profit/loss",
+      data: finalReport,
+      total: {
+        match: G_match.toFixed(2),
+        session: G_session.toFixed(2),
+        total: G_total.toFixed(2),
+        MComm: G_MComm.toFixed(2),
+        SComm: G_SComm.toFixed(2),
+        TComm: G_TComm.toFixed(2),
+        GTotal: G_GTotal.toFixed(2),
+        AShare: G_AShare.toFixed(2),
+        balance: G_Balance.toFixed(2)
+      }
+    });
+
+  } catch (err) {
+    console.error("MASTER REPORT ERROR:", err);
+    return res.status(500).json({ status: false, error: err });
+  }
+};
+
+
+exports.getDownlineAgents = async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "userId is required" });
+    }
+
+    // Step 1: get username of userId
+    const [userData] = await db.query(
+      "SELECT username FROM users WHERE id = ?",
+      [userId]
+    );
+
+    if (userData.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const mainUsername = userData[0].username;
+
+    // Step 2: recursive SQL
+    const [agents] = await db.query(
+      `WITH RECURSIVE user_tree AS (
+          SELECT id, name, username, role, master_user
+          FROM users
+          WHERE master_user = ?
+
+          UNION ALL
+
+          SELECT u.id, u.name, u.username, u.role, u.master_user
+          FROM users u
+          INNER JOIN user_tree t ON u.master_user = t.username
+      )
+      SELECT * FROM user_tree WHERE role = 6`,
+      [mainUsername]
+    );
+
+    return res.json({
+      success: true,
+      totalAgents: agents.length,
+      agents
+    });
+
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+exports.getBetsByType = async (req, res) => {
+  try {
+    const { userId, type, gmId } = req.body;
+
+    if (!userId || !type) {
+      return res.status(400).json({
+        status: false,
+        message: "userId & type are required"
+      });
+    }
+
+    // user role find
+    const [u] = await db.query("SELECT role FROM users WHERE id = ?", [userId]);
+    if (u.length === 0) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    const role = u[0].role;
+
+    // CASE 1: Company → all users
+    let userIds = [];
+    if (role == 1) {
+      const [all] = await db.query("SELECT id FROM users");
+      userIds = all.map(x => x.id);
+    }
+
+    // CASE 2 to 6 → get downline users
+    else if (role >= 2 && role <= 6) {
+      userIds = await getDownlineUsers(userId);
+    }
+
+    // CASE 7 → only self
+    else if (role == 7) {
+      userIds = [userId];
+    }
+
+    if (userIds.length === 0) userIds = [-1];
+
+    // Get Bets
+    const [bets] = await db.query(
+      `SELECT 
+         sport_bets.*,
+         users.username,
+         CASE 
+            WHEN sport_bets.market_type = 'match1' THEN 'bookmaker'
+            WHEN sport_bets.market_type = 'fancy' THEN 'session'
+            ELSE sport_bets.market_type
+         END AS type
+       FROM sport_bets
+       LEFT JOIN users ON users.id = sport_bets.user_id
+       WHERE sport_bets.market_type = ? AND sport_bets.gmId = ?
+       AND sport_bets.user_id IN (?)
+       ORDER BY sport_bets.id DESC`,
+      [type, gmId, userIds]
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Bets fetched successfully",
+      role: role,
+      users: userIds.length,
+      data: bets
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      status: false,
+      message: "Server error",
+      error: err.message
     });
   }
 };

@@ -232,9 +232,17 @@ async function viewProfile(req, res) {
 
     // 1️⃣ Get pending exposure from sport_bets
     const [sportExpoResult] = await db.query(
-      `SELECT SUM(bet_amount) AS sport_expo 
-       FROM sport_bets 
-       WHERE bet_status = 'pending' AND user_id = ?`,
+      `SELECT 
+    SUM(
+        CASE 
+            WHEN market_type = 'match1' THEN will_loss
+            WHEN market_type = 'fancy' THEN will_loss
+            ELSE 0
+        END
+    ) AS sport_expo
+FROM sport_bets
+WHERE bet_status = 'pending' 
+  AND user_id = ?;`,
       [user_id]
     );
 

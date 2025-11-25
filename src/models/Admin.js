@@ -3,83 +3,122 @@ const moment = require("moment-timezone");
 
 
 class Admin {
-  static async getDownlineUsers(id, role) {
-    try {
-      // ✅ Define MLM role hierarchy
-      const roleMap = {
-        1: [2, 3, 4, 5, 6], // Admin can see all
-        2: [3, 4, 5, 6],
-        3: [4, 5, 6],
-        4: [5, 6],
-        5: [6],
-        6: [],
-      };
+    static async getDownlineUsers(id, role) {
+  try {
+    const sql = `
+      WITH RECURSIVE user_hierarchy AS (
+        SELECT 
+          id, name, image, username, mobile, email, password, wallet, dob, gender,
+          role, token, master_user, self_amount_limit, self_share,
+          (100 - self_share) AS agent_share,
+          Match_comission, cassino_comission, session_comission,
+          status, created_at, updated_at
+        FROM users 
+        WHERE id = ? AND role = ?
+        
+        UNION ALL
+        
+        SELECT 
+          u.id, u.name, u.image, u.username, u.mobile, u.email, u.password, u.wallet,
+          u.dob, u.gender, u.role, u.token, u.master_user, u.self_amount_limit, 
+          u.self_share,
+          (100 - u.self_share) AS agent_share,
+          u.Match_comission, u.cassino_comission, u.session_comission,
+          u.status, u.created_at, u.updated_at
+        FROM users u
+        INNER JOIN user_hierarchy h ON u.master_user = h.username
+      )
+      SELECT * FROM user_hierarchy;
+    `;
 
-      const allowedRoles = roleMap[role] || [];
+    const [rows] = await db.query(sql, [id, role]);
+    return rows;
 
-      // ✅ Step 1: Get self info
-      const [selfRows] = await db.query(
-        `SELECT id, name, image, username, mobile, email, password, wallet, dob, gender, role, token, master_user,
-                self_amount_limit, self_share, Match_comission, cassino_comission, session_comission, status, created_at, updated_at
-         FROM users WHERE id = ?`,
-        [id]
-      );
-
-      let allUsers = [...selfRows]; 
-
-      if (allowedRoles.length > 0) {
-        let downlineQuery = "";
-        let params = [];
-
-        if (role === 1) {
-          // Admin → get all role 2–6
-          downlineQuery = `SELECT id, name, image, username, mobile, email, password, wallet, dob, gender, role, token, master_user,
-                                  self_amount_limit, self_share, Match_comission, cassino_comission, session_comission, status, created_at, updated_at
-                           FROM users WHERE role IN (?)`;
-          params = [allowedRoles];
-        } else {
-          // Other roles → only their direct downline
-          downlineQuery = `SELECT id, name, image, username, mobile, email, password, wallet, dob, gender, role, token, master_user,
-                                  self_amount_limit, self_share, Match_comission, cassino_comission, session_comission, status, created_at, updated_at
-                           FROM users WHERE role IN (?) AND master_user = ?`;
-          params = [allowedRoles, id];
-        }
-
-        const [downlineRows] = await db.query(downlineQuery, params);
-        allUsers = [...selfRows, ...downlineRows];
-      }
-
-      return allUsers;
-    } catch (error) {
-      console.error("Error fetching downline users:", error);
-      throw error;
-    }
+  } catch (error) {
+    console.error("Error fetching downline users:", error);
+    throw error;
   }
+}
   
     static async downUserList(id, role) {
-      try {
-        const sql = `WITH RECURSIVE user_hierarchy AS ( SELECT id, name, image, username, mobile, email, password, wallet, dob, gender, role, token, master_user, self_amount_limit, self_share, Match_comission, cassino_comission, session_comission, status, created_at, updated_at FROM users WHERE id = ? AND role = ? UNION ALL SELECT u.id, u.name, u.image, u.username, u.mobile, u.email, u.password, u.wallet, u.dob, u.gender, u.role, u.token, u.master_user, u.self_amount_limit, u.self_share, u.Match_comission, u.cassino_comission, u.session_comission, u.status, u.created_at, u.updated_at FROM users u INNER JOIN user_hierarchy h ON u.master_user = h.username ) SELECT * FROM user_hierarchy;`;
-    
-        const [rows] = await db.query(sql, [id, role]);
-        return rows;
-      } catch (error) {
-        console.error("Error fetching downline users:", error);
-        throw error;
-      }
-    }
+  try {
+    const sql = `
+      WITH RECURSIVE user_hierarchy AS (
+        SELECT 
+          id, name, image, username, mobile, email, password, wallet, dob, gender,
+          role, token, master_user, self_amount_limit, self_share,
+          (100 - self_share) AS agent_share,
+          Match_comission, cassino_comission, session_comission,
+          status, created_at, updated_at
+        FROM users 
+        WHERE id = ? AND role = ?
+        
+        UNION ALL
+        
+        SELECT 
+          u.id, u.name, u.image, u.username, u.mobile, u.email, u.password, u.wallet,
+          u.dob, u.gender, u.role, u.token, u.master_user, u.self_amount_limit, 
+          u.self_share,
+          (100 - u.self_share) AS agent_share,
+          u.Match_comission, u.cassino_comission, u.session_comission,
+          u.status, u.created_at, u.updated_at
+        FROM users u
+        INNER JOIN user_hierarchy h ON u.master_user = h.username
+      )
+      SELECT * FROM user_hierarchy;
+    `;
 
+    const [rows] = await db.query(sql, [id, role]);
+    return rows;
+
+  } catch (error) {
+    console.error("Error fetching downline users:", error);
+    throw error;
+  }
+}
 
     static async create(data) {
+
+    // Mapping role → prefix
+    const rolePrefix = {
+      2: "SAD",
+      3: "AD",
+      4: "SM",
+      5: "SAG",
+      6: "AG",
+      7: "CL",
+    };
+
+    if (!rolePrefix[data.role]) {
+      throw new Error("Invalid role selected");
+    }
+
+    // 🔥 Get last user ID to generate serial number
+    const [lastUser] = await db.query(
+      "SELECT id FROM users ORDER BY id DESC LIMIT 1"
+    );
+
+    let serial = 101;
+    if (lastUser.length > 0) {
+      serial = 101 + lastUser[0].id;
+    }
+
+    // 🔥 Generate final USERNAME
+    const finalUsername = `${rolePrefix[data.role]}${serial}`;
+
+    // ⬇️ Insert new user
     const query = `
       INSERT INTO users (
-        name, username, password, master_user, self_amount_limit, self_share,role,
-        Match_comission, session_comission, cassino_comission, created_at, updated_at
+        name, username, password, master_user, self_amount_limit, self_share, role,
+        Match_comission, session_comission, cassino_comission,
+        created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?,?, ?, ?, NOW(), NOW())
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
+
     const values = [
       data.name,
-      data.username,
+      finalUsername,
       data.password,
       data.master_user,
       data.self_amount_limit,
@@ -92,7 +131,7 @@ class Admin {
 
     const [result] = await db.query(query, values);
     return result.insertId;
-  }
+}
 
     static async getMasterUserLimit(masterUserId) {
     const [rows] = await db.query(
@@ -102,23 +141,12 @@ class Admin {
     return rows.length > 0 ? rows[0].self_amount_limit : null;
   }
   
-    // static async updateSelfLimit(masterId, newLimit) {
-    //   await db.query(
-    //     "UPDATE users SET self_amount_limit = ?, updated_at = NOW() WHERE username = ?",
-    //     [newLimit, masterId]
-    //   );
-    // }
-
-
-
-   // get all users of a role
-  static async getUsersByRole(role) {
+    static async getUsersByRole(role) {
     const [rows] = await db.query('SELECT id FROM users WHERE role = ?', [role]);
     return rows.map(r => r.id);
   }
 
-  // BFS: get all subtree users under root ids
-  static async getSubtreeUserIds(rootIds = []) {
+    static async getSubtreeUserIds(rootIds = []) {
     if (!rootIds || rootIds.length === 0) return [];
     const resultIds = new Set(rootIds.map(id => Number(id)));
     let frontier = [...resultIds];
@@ -139,8 +167,7 @@ class Admin {
     return Array.from(resultIds);
   }
 
-  // helper to format date as YYYY-MM-DD
-  static _formatDate(dt) {
+    static _formatDate(dt) {
     const d = new Date(dt);
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -148,8 +175,7 @@ class Admin {
     return `${y}-${m}-${dd}`;
   }
 
-  // main ledger generator
-  static async getLedgerData(roleid, fromDate = null, toDate = null) {
+    static async getLedgerData(roleid, fromDate = null, toDate = null) {
     try {
       let scopeUserIds = [];
 
@@ -257,6 +283,5 @@ class Admin {
     }
   }
  }
-  //end My ledger show ////
 
 module.exports = Admin;
