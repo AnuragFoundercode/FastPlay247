@@ -1,36 +1,51 @@
 const axios = require("axios");
 const Bet = require("../models/Bet");
 
-// ✅ Place Bet API
+
 // exports.placeBet = async (req, res) => {
 //   try {
-//     const { user_id, game_type, match_id, bet_choice,bet_value, amount,type } = req.body;
+//     const { user_id, game_type, match_id, bet_choice, bet_value, amount, type } = req.body;
 
 //     if (!user_id) return res.status(400).json({ success: false, message: "User ID is required" });
 //     if (!game_type) return res.status(400).json({ success: false, message: "Game type is required" });
 //     if (!match_id) return res.status(400).json({ success: false, message: "Match ID is required" });
 //     if (!bet_choice) return res.status(400).json({ success: false, message: "Bet choice is required" });
-//     if (!bet_value) return res.status(400).json({ success: false, message: "Bet Value is required" });
+//     if (!bet_value) return res.status(400).json({ success: false, message: "Bet value is required" });
 //     if (!amount) return res.status(400).json({ success: false, message: "Amount is required" });
-//     if (!type) return res.status(400).json({ success: false, message: "type is required" });
+//     if (!type) return res.status(400).json({ success: false, message: "Type is required" });
 
-//     const betId = await Bet.placeBet({ user_id, game_type, match_id, bet_choice,bet_value, amount,type });
+//     const betId = await Bet.placeBet({
+//       user_id,
+//       game_type,
+//       match_id,
+//       bet_choice,
+//       bet_value,
+//       amount,
+//       bet_type: type
+//     });
 
-//     return res.json({
+//     return res.status(200).json({
 //       success: true,
-//       message: "Bet Placed Successfully",
+//       message: "Bet placed successfully",
 //       bet_id: betId,
 //     });
+
 //   } catch (err) {
-//     // console.error("❌ placeBet Error:", err.message);
+//     console.error("❌ placeBet Error:", err.message);
+
 //     if (err.message === "Insufficient balance") {
 //       return res.status(400).json({ success: false, message: "Insufficient balance" });
 //     } else if (err.message === "User not found") {
-//       return res.status(400).json({ success: false, message: "User not found" });
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }else if (err.message === "not allowd") {
+//         return res.status(400).json({ success: false, message: "You are not allowed to place casino bets" });
+
 //     }
-//     res.status(500).json({ success: false, message: "Server Error" });
+
+//     return res.status(500).json({ success: false, message: err });
 //   }
 // };
+
 
 exports.placeBet = async (req, res) => {
   try {
@@ -63,15 +78,28 @@ exports.placeBet = async (req, res) => {
   } catch (err) {
     console.error("❌ placeBet Error:", err.message);
 
-    if (err.message === "Insufficient balance") {
-      return res.status(400).json({ success: false, message: "Insufficient balance" });
-    } else if (err.message === "User not found") {
-      return res.status(404).json({ success: false, message: "User not found" });
+    const errorMap = {
+      "Insufficient balance": "Insufficient balance",
+      "User not found": "User not found",
+      "not allowd": "You are not allowed to place casino bets",
+      "Invalid game_type": "Invalid game type",
+    };
+
+    if (err.message.startsWith("Bet amount must be")) {
+      return res.status(400).json({ success: false, message: err.message });
     }
 
-    return res.status(500).json({ success: false, message: err });
+    if (errorMap[err.message]) {
+      return res.status(400).json({ success: false, message: errorMap[err.message] });
+    }
+    return res.status(500).json({ success: false, message: err.message || err });
   }
 };
+
+
+
+
+
 
 
 // ✅ Fetch Bet History

@@ -2,44 +2,48 @@ const db = require("../config/db");
 
 class Bet {
   // ✅ Place Bet
-//   static async placeBet({ user_id, game_type, match_id, bet_choice, amount,bet_value }) {
-//     // User ka wallet check karo
-//     const [userData] = await db.query("SELECT self_amount_limit as wallet FROM users WHERE id = ?", [user_id]);
-//     if (!userData.length) throw new Error("User not found");
-
-//     const wallet = parseFloat(userData[0].wallet);
-
-//     // Agar wallet balance kam hai
-//     if (wallet < amount) {
-//       throw new Error("Insufficient balance");
-//     }
-
-//     // Wallet se amount deduct karo
-//     const newWallet = wallet - amount;
-//     await db.query("UPDATE users SET self_amount_limit = ? WHERE id = ?", [newWallet, user_id]);
-
-//     // Bet insert karo
-//     const [result] = await db.query(
-//       `INSERT INTO bets (user_id, game_type, match_id, bet_choice, amount,bet_value, status) 
-//       VALUES (?, ?, ?, ?, ?,?, 'pending')`,
-//       [user_id, game_type, match_id, bet_choice, amount,bet_value]
-//     );
-
-//     return result.insertId;
-//   }
 
 static async placeBet({ user_id, game_type, match_id, bet_choice, bet_value, amount, bet_type }) {
-  // 1️⃣ Check user and wallet balance
+
   const [userData] = await db.query(
     "SELECT self_amount_limit AS wallet FROM users WHERE id = ?",
     [user_id]
   );
+  
+  
+  const [userRows] = await db.query(
+      "SELECT id, casinoBet FROM users WHERE id = ? LIMIT 1",
+      [user_id]
+    );
+    
+    const userRowss = userRows[0];
 
   if (!userData.length) throw new Error("User not found");
 
   const wallet = parseFloat(userData[0].wallet || 0);
+  const casinoBetStatus = userRowss.casinoBet;
+  
+  if (casinoBetStatus != 1) {
+      throw new Error("not allowd");
+    }
+  
 
   if (wallet < amount) throw new Error("Insufficient balance");
+  
+  
+  const [settingsRows] = await db.query("SELECT * FROM tbl_bet_setting LIMIT 1");
+  if (!settingsRows.length) throw new Error("Bet settings not found");
+
+  const settings = settingsRows[0];
+
+  let minMax;
+  minMax = JSON.parse(settings.casino_min_max);
+ 
+
+  if (amount < minMax.min || amount > minMax.max) {
+    throw new Error(`Bet amount must be between ${minMax.min} and ${minMax.max}`);
+  }
+  
 
   const newWallet = wallet - amount;
   await db.query(

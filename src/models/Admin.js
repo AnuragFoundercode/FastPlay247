@@ -12,7 +12,7 @@ class Admin {
           role, token, master_user, self_amount_limit, self_share,
           (100 - self_share) AS agent_share,
           Match_comission, cassino_comission, session_comission,
-          status, created_at, updated_at
+          status, created_at, updated_at,matchBet, sessionBet, casinoBet
         FROM users 
         WHERE id = ? AND role = ?
         
@@ -24,7 +24,7 @@ class Admin {
           u.self_share,
           (100 - u.self_share) AS agent_share,
           u.Match_comission, u.cassino_comission, u.session_comission,
-          u.status, u.created_at, u.updated_at
+          u.status, u.created_at, u.updated_at,u.matchBet, u.sessionBet, u.casinoBet
         FROM users u
         INNER JOIN user_hierarchy h ON u.master_user = h.username
       )
@@ -49,7 +49,7 @@ class Admin {
           role, token, master_user, self_amount_limit, self_share,
           (100 - self_share) AS agent_share,
           Match_comission, cassino_comission, session_comission,
-          status, created_at, updated_at
+          status, created_at, updated_at,matchBet, sessionBet, casinoBet
         FROM users 
         WHERE id = ? AND role = ?
         
@@ -61,7 +61,7 @@ class Admin {
           u.self_share,
           (100 - u.self_share) AS agent_share,
           u.Match_comission, u.cassino_comission, u.session_comission,
-          u.status, u.created_at, u.updated_at
+          u.status, u.created_at, u.updated_at,u.matchBet, u.sessionBet, u.casinoBet
         FROM users u
         INNER JOIN user_hierarchy h ON u.master_user = h.username
       )

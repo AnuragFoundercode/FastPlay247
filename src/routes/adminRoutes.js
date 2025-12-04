@@ -5,7 +5,6 @@ const AdminController = require("../controllers/AdminController");
 router.get("/downline", AdminController.getDownline);
 
 router.post("/getDownUserList", AdminController.getDownUserList);
-// POST /api/admin/create
 router.post("/create", AdminController.createAdmin);
 router.post("/updateAdmin", AdminController.updateAdmin);
 router.post('/my_ledger', AdminController.getLedger);
@@ -26,6 +25,12 @@ router.post('/masterProfitLoss', AdminController.masterProfitLoss);
 router.post('/allMasterReport', AdminController.allMasterReport);
 router.get('/getDownlineAgents', AdminController.getDownlineAgents);
 router.post('/getBetsByType', AdminController.getBetsByType);
+router.get('/updateBetStatus', AdminController.updateBetStatus);
+router.get('/getBetHistoryByUser', AdminController.getBetHistoryByUser);
+router.get('/getBetSettings', AdminController.getBetSettings);
+router.post('/updateBetSettings', AdminController.updateBetSettings);
+router.post('/updateSelfAmount', AdminController.updateSelfAmount);
+router.post('/updateWelcomeMessage', AdminController.updateWelcomeMessage);
 
 
 module.exports = router;

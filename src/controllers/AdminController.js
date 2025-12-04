@@ -271,7 +271,6 @@ exports.createAdmin = async (req, res) => {
   }
 };
 
-
 exports.getLedger = async (req, res) => {
   try {
     const { roleid } = req.body;
@@ -799,7 +798,6 @@ exports.getAllBetHistory = async (req, res) => {
     });
   }
 };
-
 
 exports.updateAdmin = async (req, res) => {
   try {
@@ -1459,6 +1457,99 @@ exports.clientCommissionReport = async (req, res) => {
   }
 };
 
+// exports.getUserSummary = async (req, res) => {
+//   try {
+//     const { user_id } = req.body;
+
+//     if (!user_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "user_id is required"
+//       });
+//     }
+
+//     const [userData] = await db.query(
+//       "SELECT id, username, name, role, self_amount_limit, Match_comission, cassino_comission, session_comission FROM users WHERE id = ?",
+//       [user_id]
+//     );
+
+//     if (userData.length === 0) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found"
+//       });
+//     }
+
+//     const user = userData[0];
+//     const hierarchy = {
+//       1: [2,3,4,5,6,7], 
+//       2: [3,4,5,6,7],  
+//       3: [4,5,6,7],    
+//       4: [5,6,7],
+//       5: [6,7],
+//       6: [7],
+//       7: []
+//     };
+
+//     const allowedRoles = hierarchy[user.role];
+
+//     let downlineCounts = {};
+
+//     if (allowedRoles.length > 0) {
+//       const allChildren = await getRecursiveUsers(user.username);
+//       allowedRoles.forEach(r => {
+//         downlineCounts[`role_${r}`] = allChildren.filter(u => u.role === r).length;
+//       });
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "User summary fetched successfully",
+//       data: {
+//         user_id: user.id,
+//         username: user.username,
+//         name: user.name,
+//         role: user.role,
+
+//         my_self_amount_limit: user.self_amount_limit,
+
+//         commissions: {
+//           match: user.Match_comission,
+//           cassino: user.cassino_comission,
+//           session: user.session_comission
+//         },
+
+//         downline_summary: downlineCounts
+//       }
+//     });
+
+//   } catch (error) {
+//     console.log("Error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//       error
+//     });
+//   }
+// };
+
+// async function getRecursiveUsers(parentUsername) {
+//   let results = [];
+
+//   const [directUsers] = await db.query(
+//     "SELECT id, username, role FROM users WHERE master_user = ?",
+//     [parentUsername]
+//   );
+
+//   for (const u of directUsers) {
+//     results.push(u);
+//     const childUsers = await getRecursiveUsers(u.username);
+//     results = results.concat(childUsers);
+//   }
+
+//   return results;
+// }
+
 exports.getUserSummary = async (req, res) => {
   try {
     const { user_id } = req.body;
@@ -1483,6 +1574,8 @@ exports.getUserSummary = async (req, res) => {
     }
 
     const user = userData[0];
+
+    // Role hierarchy
     const hierarchy = {
       1: [2,3,4,5,6,7], 
       2: [3,4,5,6,7],  
@@ -1494,13 +1587,20 @@ exports.getUserSummary = async (req, res) => {
     };
 
     const allowedRoles = hierarchy[user.role];
-
     let downlineCounts = {};
 
+    // Only process if user has sub-roles
     if (allowedRoles.length > 0) {
       const allChildren = await getRecursiveUsers(user.username);
+
       allowedRoles.forEach(r => {
-        downlineCounts[`role_${r}`] = allChildren.filter(u => u.role === r).length;
+        const usersOfRole = allChildren.filter(u => u.role === r);
+
+        const active = usersOfRole.filter(u => u.status == 1).length;
+        const inactive = usersOfRole.filter(u => u.status == 0).length;
+
+        // Format: "active/inactive"
+        downlineCounts[`role_${r}`] = `${active}/${inactive}`;
       });
     }
 
@@ -1539,12 +1639,13 @@ async function getRecursiveUsers(parentUsername) {
   let results = [];
 
   const [directUsers] = await db.query(
-    "SELECT id, username, role FROM users WHERE master_user = ?",
+    "SELECT id, username, role, status FROM users WHERE master_user = ?",
     [parentUsername]
   );
 
   for (const u of directUsers) {
     results.push(u);
+
     const childUsers = await getRecursiveUsers(u.username);
     results = results.concat(childUsers);
   }
@@ -1578,7 +1679,6 @@ exports.welcomMsg = async (req, res) => {
     });
   }
 };
-
 
 exports.masterProfitLoss = async (req, res) => {
   try {
@@ -1807,7 +1907,6 @@ exports.masterProfitLoss = async (req, res) => {
   }
 };
 
-
 // exports.allMasterReport = async (req, res) => {
 //   try {
 //     const { user_id } = req.body;
@@ -2020,7 +2119,6 @@ exports.masterProfitLoss = async (req, res) => {
 //     return res.status(500).json({ status: false, error: err });
 //   }
 // };
-
 
 exports.allMasterReport = async (req, res) => {
   try {
@@ -2260,7 +2358,6 @@ exports.allMasterReport = async (req, res) => {
   }
 };
 
-
 exports.getDownlineAgents = async (req, res) => {
   try {
     const { userId } = req.query;
@@ -2269,7 +2366,6 @@ exports.getDownlineAgents = async (req, res) => {
       return res.status(400).json({ success: false, message: "userId is required" });
     }
 
-    // Step 1: get username of userId
     const [userData] = await db.query(
       "SELECT username FROM users WHERE id = ?",
       [userId]
@@ -2281,7 +2377,6 @@ exports.getDownlineAgents = async (req, res) => {
 
     const mainUsername = userData[0].username;
 
-    // Step 2: recursive SQL
     const [agents] = await db.query(
       `WITH RECURSIVE user_tree AS (
           SELECT id, name, username, role, master_user
@@ -2310,7 +2405,6 @@ exports.getDownlineAgents = async (req, res) => {
   }
 };
 
-
 exports.getBetsByType = async (req, res) => {
   try {
     const { userId, type, gmId } = req.body;
@@ -2321,8 +2415,6 @@ exports.getBetsByType = async (req, res) => {
         message: "userId & type are required"
       });
     }
-
-    // user role find
     const [u] = await db.query("SELECT role FROM users WHERE id = ?", [userId]);
     if (u.length === 0) {
       return res.status(404).json({ status: false, message: "User not found" });
@@ -2330,26 +2422,22 @@ exports.getBetsByType = async (req, res) => {
 
     const role = u[0].role;
 
-    // CASE 1: Company → all users
     let userIds = [];
     if (role == 1) {
       const [all] = await db.query("SELECT id FROM users");
       userIds = all.map(x => x.id);
     }
 
-    // CASE 2 to 6 → get downline users
     else if (role >= 2 && role <= 6) {
       userIds = await getDownlineUsers(userId);
     }
 
-    // CASE 7 → only self
     else if (role == 7) {
       userIds = [userId];
     }
 
     if (userIds.length === 0) userIds = [-1];
 
-    // Get Bets
     const [bets] = await db.query(
       `SELECT 
          sport_bets.*,
@@ -2384,6 +2472,474 @@ exports.getBetsByType = async (req, res) => {
     });
   }
 };
+
+// exports.updateBetStatus = async (req, res) => {
+//   try {
+//     const { username, type } = req.query;
+
+//     if (!username || !type)
+//       return res.status(400).json({ success: false, msg: "All fields required" });
+
+//     const [user] = await db.query(
+//       "SELECT id, username, role, matchBet, sessionBet, casinoBet, forcedBlock FROM users WHERE username = ?",
+//       [username]
+//     );
+
+//     if (!user.length) return res.status(404).json({ success: false, msg: "User not found" });
+
+//     const userData = user[0];
+
+    
+//     if (userData.forcedBlock == 1) {
+//       return res.status(403).json({
+//         success: false,
+//         msg: "You cannot unblock because your parent user has blocked it",
+//       });
+//     }
+
+//     let column = "";
+//     if (type == 1) column = "matchBet";
+//     else if (type == 2) column = "sessionBet";
+//     else if (type == 3) column = "casinoBet";
+//     else if (type == 4) column = "all";
+
+//     const toggleValue = (current) => (current == 1 ? 0 : 1);
+//     let newValue = 0;
+//     let isBlocking = false;
+
+//     if (column !== "all") {
+//       newValue = toggleValue(userData[column]);
+//       isBlocking = newValue === 1;
+//     }
+
+//     // Get full tree below the user
+//     const [tree] = await db.query(`
+//       WITH RECURSIVE user_tree AS (
+//         SELECT id, username, master_user
+//         FROM users
+//         WHERE username = ?
+
+//         UNION ALL
+
+//         SELECT u.id, u.username, u.master_user
+//         FROM users u
+//         INNER JOIN user_tree t ON u.master_user = t.username
+//       )
+//       SELECT id FROM user_tree;
+//     `, [username]);
+
+//     const userIds = tree.map((row) => row.id);
+
+//     // If blocking -> forceBlock = 1 for all subtree
+//     // If unblocking -> forceBlock = 0 for all subtree
+//     const forceValue = isBlocking ? 1 : 0;
+
+//     if (column === "all") {
+//       await db.query(
+//         `UPDATE users SET 
+//           matchBet = CASE WHEN matchBet = 1 THEN 0 ELSE 1 END,
+//           sessionBet = CASE WHEN sessionBet = 1 THEN 0 ELSE 1 END,
+//           casinoBet = CASE WHEN casinoBet = 1 THEN 0 ELSE 1 END,
+//           forcedBlock = ?
+//         WHERE id IN (${userIds.join(",")})`,
+//         [forceValue]
+//       );
+//     } else {
+//       await db.query(
+//         `UPDATE users SET ${column} = ?, forcedBlock = ? WHERE id IN (${userIds.join(",")})`,
+//         [newValue, forceValue]
+//       );
+//     }
+
+//     res.json({
+//       success: true,
+//       msg: isBlocking ? "Blocked successfully" : "Unblocked successfully",
+//       affectedUsers: userIds.length,
+//     });
+
+//   } catch (err) {
+//     console.log(err);
+//     res.status(500).json({ success: false, msg: "Internal server error" });
+//   }
+// };
+
+exports.updateBetStatus = async (req, res) => {
+  try {
+    const { username, userId, type } = req.query;
+
+    if (!username || !userId || !type) {
+      return res.status(400).json({
+        success: false,
+        msg: "username, userId & type required",
+      });
+    }
+
+    // Logged in user
+    const [cu] = await db.query(
+      "SELECT id, role FROM users WHERE id = ?",
+      [userId]
+    );
+    if (!cu.length)
+      return res.status(404).json({ success: false, msg: "Logged user not found" });
+
+    const loggedUser = cu[0];
+
+    // Target user
+    const [u] = await db.query(
+      "SELECT id, username, role, blockedLevel, matchBet, sessionBet, casinoBet FROM users WHERE username = ?",
+      [username]
+    );
+    if (!u.length)
+      return res.status(404).json({ success: false, msg: "User not found" });
+
+    const target = u[0];
+
+    // Type mapping
+    let column = "";
+    if (type == 1) column = "matchBet";
+    else if (type == 2) column = "sessionBet";
+    else if (type == 3) column = "casinoBet";
+    else if (type == 4) column = "all";
+    else return res.status(400).json({ success: false, msg: "Invalid type" });
+
+    // ----------------------------------------
+    // 🔓 UNBLOCK LOGIC
+    // ----------------------------------------
+    if (target.blockedLevel > 0) {
+      if (loggedUser.role > target.blockedLevel) {
+        return res.status(403).json({
+          success: false,
+          msg: "You cannot unblock because upper level user blocked it",
+        });
+      }
+
+      let unblockSQL = "";
+      if (column === "all") {
+        unblockSQL = `
+          matchBet = 1,
+          sessionBet = 1,
+          casinoBet = 1,
+          blockedLevel = 0
+        `;
+      } else {
+        unblockSQL = `
+          ${column} = 1
+        `;
+      }
+
+      await db.query(
+        `
+        UPDATE users SET ${unblockSQL}
+        WHERE id IN (
+          WITH RECURSIVE child AS (
+            SELECT id FROM users WHERE username = ?
+            UNION ALL
+            SELECT u.id FROM users u
+            INNER JOIN child c ON u.master_user = c.id
+          )
+          SELECT id FROM child
+        )
+      `,
+        [username]
+      );
+
+      return res.json({ success: true, msg: "Unblocked successfully" });
+    }
+
+    // ----------------------------------------
+    // 🔒 BLOCK LOGIC
+    // ----------------------------------------
+    const blockerLevel = loggedUser.role;
+
+    let blockSQL = "";
+    if (column === "all") {
+      blockSQL = `
+        matchBet = 0,
+        sessionBet = 0,
+        casinoBet = 0,
+        blockedLevel = ${blockerLevel}
+      `;
+    } else {
+      blockSQL = `
+        ${column} = 0,
+        blockedLevel = ${blockerLevel}
+      `;
+    }
+
+    await db.query(
+      `
+      UPDATE users 
+      SET ${blockSQL}
+      WHERE id IN (
+        WITH RECURSIVE child AS (
+          SELECT id FROM users WHERE username = ?
+          UNION ALL
+          SELECT u.id FROM users u
+          INNER JOIN child c ON u.master_user = c.id
+        )
+        SELECT id FROM child
+      )
+    `,
+      [username]
+    );
+
+    return res.json({ success: true, msg: "Blocked successfully" });
+
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ success: false, msg: "Internal server error" });
+  }
+};
+
+exports.getBetHistoryByUser = async (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    if (!user_id) {
+      return res.status(400).json({
+        success: false,
+        msg: "user_id is required",
+      });
+    }
+
+    // -------------------------
+    // 1️⃣ Fetch SPORTS BET HISTORY
+    // -------------------------
+    const [sports] = await db.query(
+      "SELECT id, user_id, event_id, event_name, market_id, market_name, market_type, bet_amount, actual_bet_amount, win_amount, bet_status, bet_message, status, created_at, bet_value, bet_choice, gmId, bet_size, will_win, will_loss FROM sport_bets WHERE user_id = ? ORDER BY created_at DESC",
+      [user_id]
+    );
+
+    // Group sports bets by gmId
+    const sportsGrouped = {};
+
+    sports.forEach(bet => {
+      const gmId = bet.gmId;
+      const event_name = bet.event_name;
+
+      if (!sportsGrouped[gmId]) {
+        sportsGrouped[gmId] = {
+          type: "sports",
+          gmId,
+          event_name,
+          total_bet_amount: 0,
+          total_win_amount: 0,
+          total_loss_amount: 0,
+          total_bets: 0,
+          bets: []
+        };
+      }
+
+      sportsGrouped[gmId].total_bet_amount += Number(bet.bet_amount || 0);
+      sportsGrouped[gmId].total_win_amount += Number(bet.will_win || 0);
+      sportsGrouped[gmId].total_loss_amount += Number(bet.will_loss || 0);
+      sportsGrouped[gmId].total_bets += 1;
+      sportsGrouped[gmId].bets.push(bet);
+    });
+
+    // -------------------------
+    // 2️⃣ Fetch CASINO BET HISTORY
+    // -------------------------
+    const [casino] = await db.query(
+      "SELECT id, user_id, game_type, game_type AS event_name, game_type AS gmId, match_id, bet_choice, amount AS actual_bet_amount, status AS bet_status, bet_value, result, win_amount AS will_win, type, created_at FROM bets WHERE user_id = ? ORDER BY created_at DESC",
+      [user_id]
+    );
+    
+    
+    //  const [casino] = await db.query(
+    //   "SELECT id, user_id, game_type, match_id, bet_choice, amount, status, bet_value, result, win_amount, type, created_at FROM bets WHERE user_id = ? ORDER BY created_at DESC",
+    //   [user_id]
+    // );
+    
+
+    // Group casino bets by game_type + date
+    const casinoGrouped = {};
+
+    casino.forEach(bet => {
+
+      const gameType = bet.game_type;
+      const date = bet.created_at.toISOString().substring(0, 10); // YYYY-MM-DD
+
+      const groupKey = `${gameType}_${date}`;
+
+      if (!casinoGrouped[groupKey]) {
+        casinoGrouped[groupKey] = {
+          type: "casino",
+          game_type: gameType,
+          date: date,
+          total_bet_amount: 0,
+          total_win_amount: 0,
+          total_loss_amount: 0,
+          total_bets: 0,
+          bets: []
+        };
+      }
+
+      casinoGrouped[groupKey].total_bet_amount += Number(bet.amount || 0);
+      casinoGrouped[groupKey].total_win_amount += Number(bet.win_amount || 0);
+      casinoGrouped[groupKey].total_loss_amount += bet.status === "lost" ? Number(bet.amount) : 0;
+      casinoGrouped[groupKey].total_bets += 1;
+
+      casinoGrouped[groupKey].bets.push(bet);
+    });
+
+    // -------------------------
+    // 3️⃣ Merge both histories
+    // -------------------------
+
+    const finalResponse = [
+      ...Object.values(sportsGrouped),
+      ...Object.values(casinoGrouped)
+    ];
+
+    return res.json({
+      success: true,
+      msg: "Bet history fetched successfully",
+      data: finalResponse,
+    });
+
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({
+      success: false,
+      msg: "Internal server error",
+      error: err.message,
+    });
+  }
+};
+
+exports.getBetSettings = async (req, res) => {
+  try {
+    const [settingsRows] = await db.query("SELECT * FROM tbl_bet_setting LIMIT 1");
+
+    if (!settingsRows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Bet settings not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: settingsRows[0],
+    });
+  } catch (err) {
+    console.error("❌ getBetSettings Error:", err.message);
+    return res.status(500).json({ success: false, message: "Something went wrong" });
+  }
+};
+
+exports.updateBetSettings = async (req, res) => {
+  try {
+    const { casino_min_max, fancy_min_max, bookmaker_min_max } = req.body;
+
+    if (!casino_min_max || !fancy_min_max || !bookmaker_min_max) {
+      return res.status(400).json({
+        success: false,
+        message: "casino_min_max, fancy_min_max, and bookmaker_min_max are required",
+      });
+    }
+
+    try {
+      JSON.parse(casino_min_max);
+      JSON.parse(fancy_min_max);
+      JSON.parse(bookmaker_min_max);
+    } catch (err) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid JSON format in min/max fields",
+      });
+    }
+
+    const [settingsRows] = await db.query("SELECT * FROM tbl_bet_setting LIMIT 1");
+
+    if (!settingsRows.length) {
+      return res.status(404).json({ success: false, message: "Bet settings not found" });
+    }
+
+    const settingsId = settingsRows[0].id;
+
+    await db.query(
+      "UPDATE tbl_bet_setting SET casino_min_max = ?, fancy_min_max = ?, bookmaker_min_max = ? WHERE id = ?",
+      [casino_min_max, fancy_min_max, bookmaker_min_max, settingsId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Bet settings updated successfully",
+    });
+  } catch (err) {
+    console.error("❌ updateBetSettings Error:", err.message);
+    return res.status(500).json({ success: false, message: "Something went wrong" });
+  }
+};
+
+exports.updateSelfAmount = async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({
+        success: false,
+        message: " Amount is required"
+      });
+    }
+
+    await db.query(
+      "UPDATE users SET self_amount_limit = self_amount_limit + ? WHERE id = ?",
+      [amount, '1']
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Self amount updated successfully",
+      data: {
+        added_amount: amount
+      }
+    });
+
+  } catch (error) {
+    console.log("Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+};
+
+exports.updateWelcomeMessage = async (req, res) => {
+  try {
+    const { welcomMsg } = req.body;
+
+    if (!welcomMsg) {
+      return res.status(400).json({
+        success: false,
+        message: "welcomMsg is required"
+      });
+    }
+
+    const [update] = await db.query(
+      "UPDATE tbl_setting SET welcomMsg = ? WHERE id = 1",
+      [welcomMsg]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Welcome message updated successfully",
+      updated_value: welcomMsg
+    });
+
+  } catch (error) {
+    console.log("❌ updateWelcomeMessage Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+};
+
+
+
 
 
 

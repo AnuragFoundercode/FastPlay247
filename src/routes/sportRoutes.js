@@ -1,6 +1,6 @@
 const express = require("express");
 const { getAllSports, getMatchList,getSportsStream,getTree,getMatchDetails,getPrivateData,renderDirectStreamIframe,getScore,getMatchListByGid,placeBet,
-  getBetsByUser,getResult,getResultOfEvent,getLiveScoreIframe } = require("../controllers/sportController");
+  getBetsByUser,getResult,getResultOfEvent,getLiveScoreIframe,getUserPLPreview } = require("../controllers/sportController");
  const { syncSportResults } = require("../controllers/sportResultController");
 
 
@@ -41,6 +41,7 @@ router.get("/get_result_of_event", getResultOfEvent);
 router.get("/live-score", getLiveScoreIframe);
 
 router.get("/sync", syncSportResults);
+router.get("/getUserPLPreview", getUserPLPreview);
 
 // Score
 //router.get("/score", getScore);

@@ -21,7 +21,7 @@ async function userLogin_13_10_2025(req, res) {
       return res.status(401).json({ success: false, message: "Invalid Username" });
     }
   } catch (err) {
-  //  console.error("DB fetch error:", err);
+    console.error("DB fetch error:", err);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 
@@ -51,7 +51,7 @@ async function userLogin_13_10_2025(req, res) {
     // Update token in DB
     await db.query("UPDATE users SET token = ? WHERE id = ?", [token, user.id]);
   } catch (dbErr) {
-  //  console.error("DB update error:", dbErr);
+    console.error("DB update error:", dbErr);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 
@@ -87,6 +87,9 @@ const generateRandomToken = () => {
   return crypto.randomBytes(length).toString('hex').slice(0, length);
 };
 
+
+
+
 const login = async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -117,7 +120,7 @@ const login = async (req, res) => {
         userName : user.username
     });
   } catch (error) {
-    // console.error('Login error:', error);
+    console.error('Login error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };

@@ -3,6 +3,14 @@ const axios = require("axios");
 
 const BASE_URL = "https://diamond-api-v2.scoreswift.xyz";
 const API_KEY = "ALdmzeQOo8ddhdhP4QWn_v34";
+const mysql = require("mysql2/promise");
+
+const db = mysql.createPool({
+  host: "localhost",
+  user: "fastplay247",          
+  password: "fastplay247",          
+  database: "fastplay247" 
+});
 
 exports.getAllSports = async (req, res) => {
   try {
@@ -36,47 +44,6 @@ exports.getMatchList = async (req, res) => {
     res.status(500).json({ success: false, msg: error });
   }
 };
-
-
-// exports.getMatchListByGid = async (req, res) => {
-//   try {
-//     const { sid, gmid } = req.query;
-
-//     if (!sid) {
-//       return res.status(400).json({ success: false, msg: "sid is required" });
-//     }
-
-//     if (!gmid) {
-//       return res.status(400).json({ success: false, msg: "gmid is required" });
-//     }
-//     const matchesData = await sportModel.fetchMatchList(sid);
-//     const allMatches = [
-//       ...(matchesData?.data?.t1 || []),
-//       ...(matchesData?.data?.t2 || []),
-//     ];
-//     const filtered = allMatches.filter(
-//       (match) => match.gmid === Number(gmid)
-//     );
-
-//     if (filtered.length === 0) {
-//       return res
-//         .status(404)
-//         .json({ success: false, msg: "No match found for given gmid and sid" });
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       msg: "Match found",
-//       data: filtered[0],
-//     });
-//   } catch (error) {
-//     // console.error("❌ Controller Error:", error.message);
-//     return res
-//       .status(500)
-//       .json({ success: false, msg: "Something went wrong" });
-//   }
-// };
-
 
 exports.getMatchListByGid = async (req, res) => {
   try {
@@ -227,26 +194,91 @@ exports.placeBet = async (req, res) => {
     const betData = req.body;
 
     if (!betData.event_id || !betData.market_id) {
-      return res.status(400).json({ 
-        success: false, 
-        msg: "event_id and market_id are required" 
+      return res.status(400).json({
+        success: false,
+        msg: "event_id and market_id are required",
       });
     }
 
+    const [userRows] = await db.query(
+      "SELECT id, matchBet, sessionBet FROM users WHERE id = ? LIMIT 1",
+      [betData.user_id]
+    );
+
+    if (userRows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        msg: "Invalid user_id",
+      });
+    }
+
+    const user = userRows[0];
+
+    if (betData.market_type === "fancy") {
+      if (user.sessionBet != 1) {
+        return res.status(400).json({
+          success: false,
+          msg: "You are not allowed to place session bets",
+        });
+      }
+    }
+
+    if (betData.market_type === "match1") {
+      if (user.matchBet != 1) {
+        return res.status(400).json({
+          success: false,
+          msg: "You are not allowed to place match bets",
+        });
+      }
+    }
+    
+    
+    const [settingsRows] = await db.query("SELECT * FROM tbl_bet_setting LIMIT 1");
+    if (settingsRows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        msg: "Bet settings not found",
+      });
+    }
+
+    const settings = settingsRows[0];
+
+    let minMax;
+    if (betData.market_type === "casino") {
+      minMax = JSON.parse(settings.casino_min_max);
+    } else if (betData.market_type === "fancy") {
+      minMax = JSON.parse(settings.fancy_min_max);
+    } else if (betData.market_type === "match1") {
+      minMax = JSON.parse(settings.bookmaker_min_max);
+    } else {
+      return res.status(400).json({
+        success: false,
+        msg: "Invalid market_type",
+      });
+    }
+
+    if (betData.bet_amount < minMax.min || betData.bet_amount > minMax.max) {
+      return res.status(400).json({
+        success: false,
+        msg: `Bet amount must be between ${minMax.min} and ${minMax.max}`,
+      });
+    }
+   
+    
     const result = await sportModel.placeBet(betData);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: result.message,
       local_insert_id: result.local_insert_id,
-      api_response: result.api_response
+      api_response: result.api_response,
     });
 
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       msg: error.message || "Something went wrong while placing bet",
-      error: error.response?.data || error.message
+      error: error.response?.data || error.message,
     });
   }
 };
@@ -348,7 +380,6 @@ exports.getResultOfEvent = async (req, res) => {
     });
 
   } catch (error) {
-    // console.error("Error fetching placed bets:", error.message);
 
     return res.status(500).json({
       success: false,
@@ -378,17 +409,113 @@ exports.getLiveScoreIframe = async (req, res) => {
       ></iframe>
     `;
 
-    // ✅ If frontend expects HTML iframe
     res.send(iframeHtml);
 
-    // ✅ Option 2 (alternative): If you just want to send the URL
-    // res.json({ success: true, iframe_url: iframeUrl });
-
   } catch (error) {
-    // console.error("❌ getLiveScoreIframe Error:", error.message);
     res.status(500).json({ success: false, msg: "Something went wrong" });
   }
 };
+
+exports.getUserPLPreview = async (req, res) => {
+  try {
+    const { user_id, gmId } = req.query;
+
+    const [bets] = await db.query(
+      `SELECT market_name AS selectionName, 
+              bet_choice AS betType,
+              bet_amount AS stake,
+              bet_value AS rate
+       FROM sport_bets
+       WHERE user_id = ? AND gmId = ? AND market_type = 'match1'`,
+      [user_id, gmId]
+    );
+
+    const apiRes = await axios.get(
+      `https://root.fastplay247.net/api/sports/matchesByGid?sid=4&gmid=${gmId}`
+    );
+
+    const sections = apiRes.data?.response?.data?.[0]?.section || [];
+
+    const teams = sections.map(s => s.nat);
+
+    // Format openbets
+    const openbets = bets.map(b => ({
+      oddsType: "Bookmaker",
+      selectionName: b.selectionName,
+      betType: b.betType.toLowerCase() === "k" ? "back" : "lay",
+      stake: Number(b.stake),
+      rate: Number(b.rate)
+    }));
+
+    // Create book structure
+    let book = teams.map((t, i) => ({
+      selectionId: i + 1,
+      selectionName: t,
+      amount: 0,
+      comPercentage: 0,
+      comAmount: 0
+    }));
+
+    // ============================
+    // PROPER BACK + LAY CALCULATION
+    // ============================
+
+    openbets.forEach(bet => {
+      const { selectionName, betType, stake, rate } = bet;
+
+      const idx = book.findIndex(b => b.selectionName === selectionName);
+
+      const profit = (stake * rate) / 100;   // main calculation ✔
+
+      if (betType === "back") {
+        // BACK:
+        // selected = +profit
+        // others = -stake
+
+        book[idx].amount -= profit;
+
+        book.forEach((t, i) => {
+          if (i !== idx) t.amount += stake;
+        });
+
+      } else if (betType === "lay") {
+        // LAY:
+        // selected = +profit (liability)
+        // others = +stake
+
+        book[idx].amount += profit;
+
+        book.forEach((t, i) => {
+          if (i !== idx) t.amount -= stake;
+        });
+      }
+    });
+
+    const books = [
+      {
+        oddsType: "Bookmaker",
+        book
+      }
+    ];
+
+    return res.json({
+      openbets,
+      books
+    });
+
+  } catch (err) {
+    return res.status(500).json({ success: false, msg: err.message });
+  }
+};
+
+
+
+
+
+
+
+
+
 
 
 
