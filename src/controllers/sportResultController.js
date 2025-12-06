@@ -47,7 +47,6 @@ exports.syncSportResults = async (req, res) => {
 
       try {
         const response = await axios.get(apiUrl, { timeout: 15000 });
-
         const results = response.data?.data;
 
         if (!results || results.length === 0) {
@@ -71,13 +70,13 @@ exports.syncSportResults = async (req, res) => {
         });
 
       } catch (error) {
-        summary.push({
-          gmId,
-          marketId,
-          status: "API Error",
-          error: error.message
-        });
-      }
+  summary.push({
+    gmId,
+    marketId,
+    status: "API Error",
+    error: error.response?.data || error.message
+  });
+}
     }
 
     return res.json({

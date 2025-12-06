@@ -31,6 +31,9 @@ router.get('/getBetSettings', AdminController.getBetSettings);
 router.post('/updateBetSettings', AdminController.updateBetSettings);
 router.post('/updateSelfAmount', AdminController.updateSelfAmount);
 router.post('/updateWelcomeMessage', AdminController.updateWelcomeMessage);
+router.post('/rollbackMarketBet', AdminController.rollbackMarketBet);
+router.get('/getUserPLPreviewForAdmin', AdminController.getUserPLPreviewForAdmin);
+router.get('/getSettlement', AdminController.getSettlement);
 
 
 module.exports = router;

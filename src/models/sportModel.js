@@ -417,8 +417,6 @@ exports.placeBet = async (betData) => {
     if (isNaN(betAmount) || betAmount <= 0) throw new Error("Invalid bet amount");
     if (op_balance < betAmount) throw new Error("Insufficient wallet balance");
 
-    // const cl_balance = op_balance - betAmount;
-
     const choice = String(bet_choice || '').trim().toUpperCase();
 
     let isLay = false;
@@ -473,6 +471,8 @@ exports.placeBet = async (betData) => {
       }
       console.log("📌 Session/Fancy calc -> rate:", rateDecimal, "will_win:", will_win, "will_loss:", will_loss);
     }
+    
+    //  if (will_loss < betAmount) throw new Error("Insufficient wallet balance");
 
     const url = `https://diamond-api-v2.scoreswift.xyz/placed_bets?key=${API_KEY}`;
     const options = {

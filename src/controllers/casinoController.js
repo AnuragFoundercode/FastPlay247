@@ -93,7 +93,7 @@ const getCasinoStream = async (req, res) => {
         </style>
       </head>
       <body>
-        <iframe src="https://live.cricketid.xyz/casino-tv?id=${id}" allowfullscreen></iframe>
+        <iframe src="https://diamond-api-v2.scoreswift.xyz/casino-tv?id=${id}" allowfullscreen></iframe>
       </body>
       </html>
     `;

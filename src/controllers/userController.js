@@ -2,6 +2,8 @@ const jwt = require("jsonwebtoken");
 const db = require("../config/db");
 const User = require("../models/userModel");
 const crypto = require('crypto');
+const axios = require("axios");
+
 
 
 // ✅ Safe User Login
@@ -222,6 +224,61 @@ async function updateRuleController(req, res){
 //profile view api///
 
 
+// async function viewProfile(req, res) {
+//   const { user_id } = req.params;
+
+//   try {
+//     const userData = await User.getById(user_id);
+//     const user = Array.isArray(userData) ? userData[0] : userData;
+
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: "User not found" });
+//     }
+
+//     // 1️⃣ Get pending exposure from sport_bets
+//     const [sportExpoResult] = await db.query(
+//       `SELECT 
+//     SUM(
+//         CASE 
+//             WHEN market_type = 'match1' THEN will_loss
+//             WHEN market_type = 'fancy' THEN will_loss
+//             ELSE 0
+//         END
+//     ) AS sport_expo
+// FROM sport_bets
+// WHERE bet_status = 'pending' 
+//   AND user_id = ?;`,
+//       [user_id]
+//     );
+
+//     const sportExposure = parseFloat(sportExpoResult[0]?.sport_expo || 0);
+
+//     // 2️⃣ Get pending exposure from bets (casino bets)
+//     const [casinoExpoResult] = await db.query(
+//       `SELECT SUM(amount) AS casino_expo 
+//       FROM bets 
+//       WHERE status = 'pending' AND user_id = ?`,
+//       [user_id]
+//     );
+
+//     const casinoExposure = parseFloat(casinoExpoResult[0]?.casino_expo || 0);
+
+//     // 3️⃣ Calculate total exposure
+//     const totalExposure = sportExposure + casinoExposure;
+
+//     // 4️⃣ Add exposure to user profile
+//     const profile = { ...user, exposure: totalExposure };
+
+//     return res.json({
+//       success: true,
+//       profile,
+//     });
+//   } catch (error) {
+//     console.error("❌ Error in viewProfile:", error);
+//     return res.status(500).json({ success: false, message: "Server error" });
+//   }
+// }
+
 async function viewProfile(req, res) {
   const { user_id } = req.params;
 
@@ -233,49 +290,111 @@ async function viewProfile(req, res) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // 1️⃣ Get pending exposure from sport_bets
-    const [sportExpoResult] = await db.query(
+    // -------------------------------------
+    // 1️⃣ Get ALL pending sport bets
+    // -------------------------------------
+    const [sportBets] = await db.query(
       `SELECT 
-    SUM(
-        CASE 
-            WHEN market_type = 'match1' THEN will_loss
-            WHEN market_type = 'fancy' THEN will_loss
-            ELSE 0
-        END
-    ) AS sport_expo
-FROM sport_bets
-WHERE bet_status = 'pending' 
-  AND user_id = ?;`,
+          market_type, bet_choice, bet_amount, bet_value, 
+          market_name, gmId, will_loss
+       FROM sport_bets
+       WHERE bet_status='pending' AND user_id=?`,
       [user_id]
     );
 
-    const sportExposure = parseFloat(sportExpoResult[0]?.sport_expo || 0);
+    let matchExposure = 0;
+    let fancyExposure = 0;
 
-    // 2️⃣ Get pending exposure from bets (casino bets)
+    // -------------------------------------
+    //  GROUP match bets by GMID (market)
+    // -------------------------------------
+    const matchBets = sportBets.filter(b => b.market_type === "match1");
+
+    const groupedByGm = {};
+    for (const b of matchBets) {
+      if (!groupedByGm[b.gmId]) groupedByGm[b.gmId] = [];
+      groupedByGm[b.gmId].push(b);
+    }
+
+    // -------------------------------------
+    // CALCULATE MATCH1 EXPOSURE FOR EACH MARKET
+    // -------------------------------------
+    for (const gmId in groupedByGm) {
+      const bets = groupedByGm[gmId];
+
+      // Get team names from API
+      const apiRes = await axios.get(
+        `https://root.fastplay247.net/api/sports/matchesByGid?sid=4&gmid=${gmId}`
+      );
+
+      const sections = apiRes.data?.response?.data?.[0]?.section || [];
+      const teams = sections.map(s => s.nat);
+
+      // Initialize PL table
+      let book = {};
+      teams.forEach(t => (book[t] = 0));
+
+      // Apply Bookmaker logic
+      for (const b of bets) {
+        const team = b.market_name;
+        const stake = Number(b.bet_amount);
+        const rate = Number(b.bet_value);
+        const type = b.bet_choice.toLowerCase() === "k" ? "back" : "lay";
+
+        const backProfit = (rate * stake) / 100;
+
+        for (const t of teams) {
+          if (t === team) {
+            if (type === "back") book[t] -= backProfit;
+            if (type === "lay") book[t] += rate;
+          } else {
+            if (type === "back") book[t] += stake;
+            if (type === "lay") book[t] -= stake;
+          }
+        }
+      }
+
+      // Worst loss = exposure for this market
+      const minPL = Math.min(...Object.values(book));
+      matchExposure += Math.abs(minPL);
+    }
+
+    // -------------------------------------
+    //  FANCY EXPOSURE
+    // -------------------------------------
+    fancyExposure = sportBets
+      .filter(b => b.market_type === "fancy")
+      .reduce((sum, b) => sum + Number(b.will_loss), 0);
+
+    // -------------------------------------
+    //  CASINO EXPOSURE
+    // -------------------------------------
     const [casinoExpoResult] = await db.query(
       `SELECT SUM(amount) AS casino_expo 
        FROM bets 
-       WHERE status = 'pending' AND user_id = ?`,
+       WHERE status='pending' AND user_id=?`,
       [user_id]
     );
 
     const casinoExposure = parseFloat(casinoExpoResult[0]?.casino_expo || 0);
 
-    // 3️⃣ Calculate total exposure
-    const totalExposure = sportExposure + casinoExposure;
+    // -------------------------------------
+    // FINAL EXPOSURE
+    // -------------------------------------
+    const totalExposure = matchExposure + fancyExposure + casinoExposure;
 
-    // 4️⃣ Add exposure to user profile
     const profile = { ...user, exposure: totalExposure };
 
     return res.json({
       success: true,
       profile,
     });
+
   } catch (error) {
-    console.error("❌ Error in viewProfile:", error);
+    console.error("❌ Exposure Error:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
-}
+};
 
 
 async function changeStatus(req, res) {
